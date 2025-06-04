@@ -206,7 +206,7 @@ background-color: #374151;
 </div>
 <div>
 <h1 class="text-2xl font-bold text-oman-blue dark:text-oman-light">المصداقية</h1>
-<p class="text-sm text-adaptive-secondary">للعقارات</p>
+<p class="text-sm text-adaptive-secondary">لتأجير الوحدات السكنية</p>
 </div>
 </div>
 
@@ -259,7 +259,7 @@ background-color: #374151;
 <option value="صلالة الغربية">صلالة الغربية</option>
 <option value="عوقد">عوقد</option>
 <option value="السعادة">السعادة</option>
-<option value="صحنوت">صحلنوت</option>
+<option value="صحنوت">صحنوت</option>
 <option value="ريسوت">ريسوت</option>
 </select>
 </div>
@@ -407,10 +407,20 @@ let currentUnit = null;
 let currentImages = [];
 let currentAvailability = {};
 
-// وظائف التخزين
+// وظائف التخزين - استخدام localStorage للتخزين الدائم
 function loadFromStorage(key, defaultValue) {
 try {
-const stored = sessionStorage.getItem(key);
+// محاولة التحميل من localStorage أولاً
+let stored = localStorage.getItem(key);
+if (!stored) {
+// إذا لم توجد في localStorage، جرب sessionStorage (للتوافق مع النسخ القديمة)
+stored = sessionStorage.getItem(key);
+if (stored) {
+// انقل البيانات من sessionStorage إلى localStorage
+localStorage.setItem(key, stored);
+sessionStorage.removeItem(key);
+}
+}
 return stored ? JSON.parse(stored) : defaultValue;
 } catch (e) {
 console.warn('خطأ في تحميل البيانات:', e);
@@ -420,10 +430,98 @@ return defaultValue;
 
 function saveToStorage(key, value) {
 try {
+// حفظ في localStorage للتخزين الدائم
+localStorage.setItem(key, JSON.stringify(value));
+// نسخ احتياطية في sessionStorage أيضاً
 sessionStorage.setItem(key, JSON.stringify(value));
 } catch (e) {
 console.warn('خطأ في حفظ البيانات:', e);
+// في حالة فشل localStorage، جرب sessionStorage فقط
+try {
+sessionStorage.setItem(key, JSON.stringify(value));
+} catch (e2) {
+console.warn('فشل في حفظ البيانات في كلا المخازن:', e2);
 }
+}
+}
+
+// وظيفة لمزامنة البيانات بين النوافذ/التبويبات
+function syncDataAcrossTabs() {
+window.addEventListener('storage', function(e) {
+if (e.storageArea === localStorage) {
+switch(e.key) {
+case 'units':
+units = JSON.parse(e.newValue || '[]');
+loadUnits();
+break;
+case 'siteSettings':
+siteSettings = JSON.parse(e.newValue || '{}');
+updateFooter();
+break;
+case 'messages':
+messages = JSON.parse(e.newValue || '[]');
+break;
+}
+}
+});
+}
+
+// وظيفة لتصدير البيانات كرابط للمشاركة
+function generateShareableLink() {
+const data = {
+units: units,
+siteSettings: siteSettings,
+messages: messages,
+timestamp: new Date().toISOString()
+};
+
+try {
+const compressedData = btoa(encodeURIComponent(JSON.stringify(data)));
+const currentUrl = window.location.href.split('?')[0].split('#')[0];
+return `${currentUrl}?data=${compressedData}`;
+} catch (e) {
+console.warn('فشل في إنشاء رابط المشاركة:', e);
+return null;
+}
+}
+
+// وظيفة لتحميل البيانات من رابط المشاركة
+function loadFromShareableLink() {
+const urlParams = new URLSearchParams(window.location.search);
+const dataParam = urlParams.get('data');
+
+if (dataParam) {
+try {
+const decodedData = JSON.parse(decodeURIComponent(atob(dataParam)));
+
+// تحميل البيانات
+if (decodedData.units) {
+units = decodedData.units;
+saveToStorage('units', units);
+}
+
+if (decodedData.siteSettings) {
+siteSettings = decodedData.siteSettings;
+saveToStorage('siteSettings', siteSettings);
+}
+
+if (decodedData.messages) {
+messages = decodedData.messages;
+saveToStorage('messages', messages);
+}
+
+// إزالة البارامتر من الرابط
+const newUrl = window.location.href.split('?')[0];
+window.history.replaceState({}, document.title, newUrl);
+
+showNotification('تم تحميل البيانات من الرابط بنجاح!', 'success');
+return true;
+} catch (e) {
+console.warn('فشل في تحميل البيانات من الرابط:', e);
+showNotification('فشل في تحميل البيانات من الرابط', 'error');
+}
+}
+return false;
 }
 
 // توليد بيانات التوفر التجريبية
@@ -460,10 +558,22 @@ return dates;
 
 // تهيئة التطبيق
 function initApp() {
+// تحميل البيانات من رابط المشاركة إن وجد
+const dataLoaded = loadFromShareableLink();
+
 setupEventListeners();
 initDarkMode();
 updateFooter();
 loadUnits();
+
+// تفعيل مزامنة البيانات بين النوافذ
+syncDataAcrossTabs();
+// عرض رسالة ترحيب إذا تم تحميل البيانات من رابط
+if (dataLoaded) {
+setTimeout(() => {
+showNotification('تم تحميل آخر التحديثات من الرابط!', 'success');
+}, 1000);
+}
 }
 
 // إعداد مستمعي الأحداث
@@ -1127,6 +1237,9 @@ adminPanel.querySelector('.modal-content').innerHTML = `
 <button onclick="showAdminTab('settings')" class="admin-tab-btn px-4 py-3 font-medium border-b-2 border-transparent text-adaptive-secondary hover:text-adaptive">
 إعدادات الموقع
 </button>
+<button onclick="showShareLink()" class="px-4 py-3 font-medium text-accent hover:text-green-600 transition-all">
+📤 مشاركة الموقع
+</button>
 </nav>
 </div>
 
@@ -1358,7 +1471,7 @@ content.innerHTML = `
 <option value="صلالة الغربية">صلالة الغربية</option>
 <option value="عوقد">عوقد</option>
 <option value="السعادة">السعادة</option>
-<option value="صحنوت">صحلنوت</option>
+<option value="صحنوت">صحنوت</option>
 <option value="ريسوت">ريسوت</option>
 </select>
 </div>
@@ -1479,7 +1592,7 @@ content.innerHTML = `
 <option value="صلالة الغربية" ${unit.location === 'صلالة الغربية' ? 'selected' : ''}>صلالة الغربية</option>
 <option value="عوقد" ${unit.location === 'عوقد' ? 'selected' : ''}>عوقد</option>
 <option value="السعادة" ${unit.location === 'السعادة' ? 'selected' : ''}>السعادة</option>
-<option value="صحنوت" ${unit.location === 'صحلنوت' ? 'selected' : ''}>صحنلوت</option>
+<option value="صحنوت" ${unit.location === 'صحنوت' ? 'selected' : ''}>صحنوت</option>
 <option value="ريسوت" ${unit.location === 'ريسوت' ? 'selected' : ''}>ريسوت</option>
 </select>
 </div>
@@ -1595,6 +1708,108 @@ notification.innerHTML = `
 
 document.body.appendChild(notification);
 setTimeout(() => notification.remove(), 5000);
+}
+
+// عرض رابط المشاركة
+function showShareLink() {
+const shareUrl = generateShareableLink();
+if (!shareUrl) {
+showNotification('فشل في إنشاء رابط المشاركة', 'error');
+return;
+}
+
+const content = document.getElementById('admin-content');
+content.innerHTML = `
+<div class="mb-6">
+<h2 class="text-xl font-bold text-adaptive">مشاركة الموقع</h2>
+<p class="text-adaptive-secondary">استخدم هذا الرابط لمشاركة الموقع مع جميع البيانات المحدثة</p>
+</div>
+
+<div class="bg-white dark:bg-gray-700 rounded-lg shadow p-6">
+<div class="mb-4">
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">رابط المشاركة</label>
+<div class="flex space-x-2 space-x-reverse">
+<input type="text" value="${shareUrl}" readonly
+id="shareUrlInput"
+class="flex-1 p-3 border rounded-lg bg-gray-50 dark:bg-gray-600 text-adaptive text-sm">
+<button onclick="copyShareLink()"
+class="px-4 py-3 bg-oman-blue hover:bg-oman-light text-white rounded-lg transition-all whitespace-nowrap">
+📋 نسخ
+</button>
+</div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+<div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg text-center">
+<div class="text-2xl mb-2">🏠</div>
+<div class="font-bold text-adaptive">${units.length}</div>
+<div class="text-sm text-adaptive-secondary">وحدة سكنية</div>
+</div>
+<div class="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg text-center">
+<div class="text-2xl mb-2">📬</div>
+<div class="font-bold text-adaptive">${messages.length}</div>
+<div class="text-sm text-adaptive-secondary">رسالة</div>
+</div>
+<div class="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg text-center">
+<div class="text-2xl mb-2">⚙️</div>
+<div class="font-bold text-adaptive">محدث</div>
+<div class="text-sm text-adaptive-secondary">إعدادات الموقع</div>
+</div>
+</div>
+
+<div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
+<div class="flex items-start space-x-3 space-x-reverse">
+<div class="text-yellow-600 text-xl">⚠️</div>
+<div>
+<h4 class="font-bold text-adaptive mb-1">تنبيه مهم</h4>
+<p class="text-sm text-adaptive">
+هذا الرابط يحتوي على جميع بيانات الموقع. عند فتحه من أي جهاز آخر، ستظهر جميع التحديثات والوحدات والإعدادات.
+احرص على مشاركته مع الأشخاص المناسبين فقط.
+</p>
+</div>
+</div>
+</div>
+
+<div class="flex space-x-4 space-x-reverse mt-6">
+<button onclick="shareViaWhatsApp()"
+class="flex items-center space-x-2 space-x-reverse bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-all">
+<span>💬</span><span>مشاركة عبر واتساب</span>
+</button>
+<button onclick="refreshShareLink()"
+class="flex items-center space-x-2 space-x-reverse bg-accent hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-all">
+<span>🔄</span><span>تحديث الرابط</span>
+</button>
+</div>
+</div>
+`;
+}
+
+// نسخ رابط المشاركة
+function copyShareLink() {
+const input = document.getElementById('shareUrlInput');
+input.select();
+input.setSelectionRange(0, 99999);
+
+try {
+document.execCommand('copy');
+showNotification('تم نسخ الرابط بنجاح!', 'success');
+} catch (err) {
+showNotification('فشل في نسخ الرابط', 'error');
+}
+}
+
+// مشاركة عبر واتساب
+function shareViaWhatsApp() {
+const shareUrl = document.getElementById('shareUrlInput').value;
+const message = `🏠 موقع ${siteSettings.companyName}\n\nيمكنك مشاهدة جميع الوحدات السكنية المتاحة من خلال هذا الرابط:\n${shareUrl}`;
+const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+window.open(whatsappUrl, '_blank');
+}
+
+// تحديث رابط المشاركة
+function refreshShareLink() {
+showShareLink();
+showNotification('تم تحديث الرابط بآخر البيانات!', 'success');
 }
 
 // تهيئة التطبيق عند تحميل الصفحة
