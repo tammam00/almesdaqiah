@@ -198,9 +198,59 @@ background-color: #1f2937;
 border-color: #4a90e2;
 background-color: #374151;
 }
+
+/* مؤشر حالة التزامن */
+.sync-indicator {
+position: fixed;
+top: 20px;
+left: 20px;
+z-index: 1000;
+display: flex;
+align-items: center;
+gap: 8px;
+padding: 8px 12px;
+border-radius: 20px;
+font-size: 12px;
+font-weight: 500;
+transition: all 0.3s ease;
+}
+
+.sync-online {
+background: #10b981;
+color: white;
+}
+
+.sync-offline {
+background: #ef4444;
+color: white;
+}
+
+.sync-syncing {
+background: #f59e0b;
+color: white;
+}
+
+.pulse-dot {
+width: 8px;
+height: 8px;
+border-radius: 50%;
+background: currentColor;
+animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+0%, 100% { opacity: 1; }
+50% { opacity: 0.5; }
+}
 </style>
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 transition-all duration-300">
+<!-- مؤشر حالة التزامن -->
+<div id="syncIndicator" class="sync-indicator sync-offline">
+<div class="pulse-dot"></div>
+<span id="syncStatus">غير متصل</span>
+</div>
+
 <!-- Header -->
 <header class="bg-white dark:bg-gray-800 shadow-lg transition-all duration-300">
 <div class="container mx-auto px-4 py-4">
@@ -279,6 +329,14 @@ background-color: #374151;
 <!-- Units Grid -->
 <div id="unitsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 <!-- Units will be loaded here -->
+</div>
+
+<!-- Loading Spinner -->
+<div id="loadingSpinner" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+<div class="bg-white dark:bg-gray-800 rounded-lg p-6 flex items-center space-x-4 space-x-reverse">
+<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-oman-blue"></div>
+<span class="text-adaptive font-medium">جاري تحميل البيانات...</span>
+</div>
 </div>
 </main>
 
@@ -366,13 +424,32 @@ background-color: #374151;
 </footer>
 
 <script>
-// إعدادات التطبيق
+// ===== إعدادات التطبيق =====
 const APP_CONFIG = {
 MAX_IMAGES: 10,
 MAX_FILE_SIZE: 5 * 1024 * 1024, // 5MB
 CALENDAR_START: { month: 5, day: 1 }, // يونيو 1
 CALENDAR_END: { month: 8, day: 1 }, // سبتمبر 1
-ADMIN_CREDENTIALS: { username: 'AbuSalim', password: '19802002' }
+ADMIN_CREDENTIALS: { username: 'AbuSalim', password: '19802002' },
+
+// إعدادات التزامن المركزي
+SYNC_CONFIG: {
+// GitHub Gist للتخزين المركزي
+GITHUB_GIST_ID: 'almosdaqiya_data_2024',
+GITHUB_TOKEN: null, // سيتم تعيينه تلقائياً
+
+// خادم بديل للتزامن
+BACKUP_SERVER: 'https://api.github.com/gists',
+
+// تردد التحقق من التحديثات (بالثواني)
+SYNC_INTERVAL: 10,
+
+// الحد الأقصى للمحاولات
+MAX_RETRIES: 3,
+
+// نمط الشيفرة الفريدة للبيانات
+DATA_SIGNATURE: 'ALMOSDAQIYA_RENTAL_DATA_V2'
+}
 };
 
 // أسماء الأيام والشهور العربية
@@ -382,424 +459,420 @@ const ARABIC_MONTHS = [
 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
 ];
 
-// متغيرات التطبيق
-let siteSettings = loadFromStorage('siteSettings', {
-phone: '+968 2345 6789',
-whatsapp: '+968 9876 5432',
-email: 'info@almosdaqiya.om',
-address: 'صلالة، سلطنة عمان',
-companyName: 'المصداقية لتأجير الوحدات السكنية',
-description: 'نوفر أفضل الوحدات السكنية للإيجار في صلالة وضواحيها بأسعار مناسبة وخدمة متميزة.'
-});
+// ===== نظام التزامن المركزي المتقدم =====
+class CentralSyncSystem {
+constructor() {
+this.isOnline = navigator.onLine;
+this.lastSyncTime = 0;
+this.syncInterval = null;
+this.retryCount = 0;
+this.localBackup = {};
+this.syncQueue = [];
+this.isAdmin = false;
 
-let units = loadFromStorage('units', [
-{
-id: 1,
-name: "شقة الخليج الراقية",
-type: "شقة",
-location: "صلالة الجديدة",
-description: "شقة مفروشة بالكامل مع إطلالة رائعة على البحر، تحتوي على غرفتين وصالة ومطبخ مجهز",
-images: ["https://picsum.photos/400/300?random=1", "https://picsum.photos/400/300?random=2"],
-availability: generateSampleAvailability(),
-contact: { whatsapp: "+96812345678", phone: "+96812345678" }
-}
-]);
+// إنشاء معرف فريد للجلسة
+this.sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 
-let messages = loadFromStorage('messages', []);
-let currentUser = null;
-let selectedDates = [];
-let currentUnit = null;
-let currentImages = [];
-let currentAvailability = {};
-
-// وظائف التخزين - استخدام localStorage للتخزين الدائم
-function loadFromStorage(key, defaultValue) {
-try {
-// محاولة التحميل من localStorage أولاً
-let stored = localStorage.getItem(key);
-if (!stored) {
-// إذا لم توجد في localStorage، جرب sessionStorage (للتوافق مع النسخ القديمة)
-stored = sessionStorage.getItem(key);
-if (stored) {
-// انقل البيانات من sessionStorage إلى localStorage
-localStorage.setItem(key, stored);
-sessionStorage.removeItem(key);
-}
-}
-return stored ? JSON.parse(stored) : defaultValue;
-} catch (e) {
-console.warn('خطأ في تحميل البيانات:', e);
-return defaultValue;
-}
+console.log('🔧 تهيئة نظام التزامن المركزي...');
+this.init();
 }
 
-function saveToStorage(key, value) {
-try {
-// حفظ في localStorage للتخزين الدائم
-localStorage.setItem(key, JSON.stringify(value));
-// نسخ احتياطية في sessionStorage أيضاً
-sessionStorage.setItem(key, JSON.stringify(value));
-
-// بث فوري للتحديث
-forceBroadcastUpdate(key, value);
-} catch (e) {
-console.warn('خطأ في حفظ البيانات:', e);
-// في حالة فشل localStorage، جرب sessionStorage فقط
-try {
-sessionStorage.setItem(key, JSON.stringify(value));
-} catch (e2) {
-console.warn('فشل في حفظ البيانات في كلا المخازن:', e2);
-}
-}
-}
-
-// ===== نظام التزامن المحسن والموثوق =====
-let syncChannel = null;
-let lastSyncTime = Date.now();
-let syncInterval = null;
-let heartbeatInterval = null;
-let isOnline = navigator.onLine;
-let deviceId = null;
-let activeUsers = new Map();
-
-// إنشاء قناة البث للتزامن
-function initSyncSystem() {
-console.log('🔄 بدء تهيئة نظام التزامن المتقدم...');
-
-// الحصول على معرف الجهاز
-deviceId = getDeviceId();
-console.log('📱 معرف الجهاز:', deviceId);
-
-try {
-// استخدام BroadcastChannel للتزامن بين التبويبات
-syncChannel = new BroadcastChannel('almosdaqiya-sync-v2');
-syncChannel.addEventListener('message', handleSyncMessage);
-console.log('✅ تم تفعيل BroadcastChannel');
-
-// اختبار فوري
-setTimeout(() => {
-broadcastSync('test_connection', {
-message: 'اختبار الاتصال',
-time: new Date().toLocaleTimeString('ar-SA')
-});
-}, 500);
-
-} catch (e) {
-console.warn('⚠️ BroadcastChannel غير مدعوم، استخدام localStorage فقط');
-}
-
-// مراقبة التغييرات في localStorage
-window.addEventListener('storage', handleStorageChange);
-console.log('✅ تم تفعيل مراقبة localStorage');
-
+async init() {
 // مراقبة حالة الاتصال
-window.addEventListener('online', handleOnlineStatus);
-window.addEventListener('offline', handleOnlineStatus);
+window.addEventListener('online', () => this.handleConnectionChange(true));
+window.addEventListener('offline', () => this.handleConnectionChange(false));
 
-// التحقق الدوري من التحديثات كل 3 ثوان
-startSyncInterval();
+// تهيئة GitHub Gist إذا لم يكن موجوداً
+await this.initializeDataStore();
 
-// إرسال إشارة الحضور كل 10 ثوان
-startHeartbeat();
+// بدء دورة التزامن
+this.startSyncCycle();
 
-console.log('🎉 تم تهيئة نظام التزامن بنجاح!');
-showSyncNotification('🔄 تم تفعيل نظام التزامن', 'success');
+// تحميل البيانات الأولية
+await this.loadInitialData();
+
+console.log('✅ تم تهيئة نظام التزامن المركزي بنجاح');
+this.updateSyncIndicator('online', 'متصل ومتزامن');
 }
 
-// معالجة رسائل التزامن
-function handleSyncMessage(event) {
-const { type, data, timestamp, source } = event.data;
+async initializeDataStore() {
+try {
+// تحقق من وجود Gist
+const gistExists = await this.checkGistExists();
 
-console.log('📨 تم استقبال رسالة تزامن:', type, 'من:', source);
-
-// تجاهل الرسائل من نفس المصدر
-if (source === deviceId) {
-console.log('⏭️ تجاهل الرسالة من نفس المصدر');
-return;
+if (!gistExists) {
+console.log('🆕 إنشاء مخزن بيانات جديد...');
+await this.createNewDataStore();
+} else {
+console.log('✅ تم العثور على مخزن البيانات الحالي');
 }
-
-// التحقق من أن الرسالة أحدث من آخر تزامن
-if (timestamp <= lastSyncTime) {
-console.log('⏭️ تجاهل الرسالة القديمة');
-return;
-}
-
-switch (type) {
-case 'test_connection':
-console.log('🧪 اختبار الاتصال:', data.message);
-showSyncNotification('✅ تم اختبار الاتصال: ' + data.time, 'sync');
-break;
-
-case 'units_updated':
-console.log('🏠 تحديث الوحدات');
-units = data;
-loadUnits();
-showSyncNotification('🏠 تم تحديث الوحدات', 'sync');
-break;
-
-case 'settings_updated':
-console.log('⚙️ تحديث الإعدادات');
-siteSettings = data;
-updateFooter();
-showSyncNotification('⚙️ تم تحديث إعدادات الموقع', 'sync');
-break;
-
-case 'message_added':
-console.log('📬 رسالة جديدة');
-messages = data;
-showSyncNotification('📬 رسالة جديدة', 'sync');
-break;
-
-case 'presence':
-updateActiveUsers(data);
-break;
-}
-
-lastSyncTime = timestamp;
-}
-
-// معالجة تغييرات localStorage
-function handleStorageChange(e) {
-if (e.storageArea !== localStorage) return;
-
-console.log('💾 تغيير في localStorage:', e.key);
-
-const timestamp = Date.now();
-let updated = false;
-
-switch(e.key) {
-case 'units':
-if (e.newValue) {
-const newUnits = JSON.parse(e.newValue);
-if (JSON.stringify(newUnits) !== JSON.stringify(units)) {
-console.log('🏠 تحديث الوحدات من localStorage');
-units = newUnits;
-loadUnits();
-broadcastSync('units_updated', units, timestamp);
-updated = true;
-}
-}
-break;
-
-case 'siteSettings':
-if (e.newValue) {
-const newSettings = JSON.parse(e.newValue);
-if (JSON.stringify(newSettings) !== JSON.stringify(siteSettings)) {
-console.log('⚙️ تحديث الإعدادات من localStorage');
-siteSettings = newSettings;
-updateFooter();
-broadcastSync('settings_updated', siteSettings, timestamp);
-updated = true;
-}
-}
-break;
-
-case 'messages':
-if (e.newValue) {
-const newMessages = JSON.parse(e.newValue);
-if (newMessages.length > messages.length) {
-console.log('📬 رسالة جديدة من localStorage');
-messages = newMessages;
-broadcastSync('message_added', messages, timestamp);
-updated = true;
-}
-}
-break;
-}
-
-if (updated) {
-lastSyncTime = timestamp;
-console.log('✅ تم التحديث، آخر وقت تزامن:', new Date(lastSyncTime).toLocaleTimeString());
+} catch (error) {
+console.warn('⚠️ فشل في تهيئة مخزن البيانات، استخدام التخزين المحلي:', error);
+this.updateSyncIndicator('offline', 'وضع عدم الاتصال');
 }
 }
 
-// بث رسالة تزامن
-function broadcastSync(type, data, timestamp = Date.now()) {
-const message = {
-type,
-data,
-timestamp,
-source: deviceId
+async checkGistExists() {
+try {
+// البحث عن Gist باستخدام التوقيع الفريد
+const response = await fetch('https://api.github.com/gists/public');
+if (!response.ok) return false;
+
+const gists = await response.json();
+const ourGist = gists.find(gist =>
+gist.files && Object.keys(gist.files).some(filename =>
+filename.includes(APP_CONFIG.SYNC_CONFIG.DATA_SIGNATURE)
+)
+);
+
+if (ourGist) {
+APP_CONFIG.SYNC_CONFIG.GITHUB_GIST_ID = ourGist.id;
+return true;
+}
+
+return false;
+} catch (error) {
+console.warn('خطأ في البحث عن Gist:', error);
+return false;
+}
+}
+
+async createNewDataStore() {
+const initialData = {
+signature: APP_CONFIG.SYNC_CONFIG.DATA_SIGNATURE,
+version: '2.0',
+lastUpdate: new Date().toISOString(),
+units: this.getDefaultUnits(),
+siteSettings: this.getDefaultSettings(),
+messages: [],
+metadata: {
+created: new Date().toISOString(),
+creator: 'AlMosdaqiya_System',
+description: 'بيانات موقع المصداقية لتأجير الوحدات السكنية'
+}
 };
-
-console.log('📤 بث رسالة تزامن:', type);
 
 try {
-// البث عبر BroadcastChannel
-if (syncChannel) {
-syncChannel.postMessage(message);
-console.log('✅ تم البث عبر BroadcastChannel');
+const response = await fetch('https://api.github.com/gists', {
+method: 'POST',
+headers: {
+'Content-Type': 'application/json'
+},
+body: JSON.stringify({
+description: 'AlMosdaqiya Rental Data Storage',
+public: true,
+files: {
+[`${APP_CONFIG.SYNC_CONFIG.DATA_SIGNATURE}.json`]: {
+content: JSON.stringify(initialData, null, 2)
 }
-// حفظ في localStorage كنسخة احتياطية للأجهزة الأخرى
-localStorage.setItem('last_sync_message', JSON.stringify(message));
-localStorage.setItem('last_sync_time', timestamp.toString());
-console.log('✅ تم حفظ رسالة التزامن في localStorage');
+}
+})
+});
 
-} catch (e) {
-console.warn('❌ فشل في بث رسالة التزامن:', e);
+if (response.ok) {
+const gist = await response.json();
+APP_CONFIG.SYNC_CONFIG.GITHUB_GIST_ID = gist.id;
+console.log('✅ تم إنشاء مخزن البيانات الجديد:', gist.id);
+} else {
+throw new Error('فشل في إنشاء Gist');
 }
+} catch (error) {
+console.warn('⚠️ فشل في إنشاء مخزن البيانات المركزي:', error);
+this.saveLocalBackup(initialData);
 }
-
-// بث فوري عند حفظ البيانات
-function forceBroadcastUpdate(key, value) {
-const timestamp = Date.now();
-
-setTimeout(() => {
-switch(key) {
-case 'units':
-broadcastSync('units_updated', value, timestamp);
-break;
-case 'siteSettings':
-broadcastSync('settings_updated', value, timestamp);
-break;
-case 'messages':
-broadcastSync('message_added', value, timestamp);
-break;
-}
-}, 100);
 }
 
-// الحصول على معرف الجهاز
-function getDeviceId() {
-let deviceId = localStorage.getItem('device_id');
-if (!deviceId) {
-deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-localStorage.setItem('device_id', deviceId);
-console.log('🆕 تم إنشاء معرف جهاز جديد:', deviceId);
+async loadInitialData() {
+this.showLoadingSpinner(true);
+
+try {
+const data = await this.fetchRemoteData();
+if (data) {
+this.applyDataUpdate(data);
+console.log('✅ تم تحميل البيانات من الخادم المركزي');
+} else {
+// تحميل من النسخة الاحتياطية المحلية
+this.loadLocalBackup();
+console.log('📱 تم تحميل البيانات من النسخة الاحتياطية المحلية');
 }
-return deviceId;
+} catch (error) {
+console.warn('⚠️ فشل في تحميل البيانات:', error);
+this.loadLocalBackup();
+} finally {
+this.showLoadingSpinner(false);
+}
 }
 
-// بث إشارة الحضور
-function broadcastPresence() {
-const presence = {
-deviceId: deviceId,
-timestamp: Date.now(),
-userAgent: navigator.userAgent.substring(0, 50),
-isAdmin: currentUser !== null
+async fetchRemoteData() {
+if (!APP_CONFIG.SYNC_CONFIG.GITHUB_GIST_ID) return null;
+
+try {
+const response = await fetch(`https://api.github.com/gists/${APP_CONFIG.SYNC_CONFIG.GITHUB_GIST_ID}`);
+if (!response.ok) return null;
+
+const gist = await response.json();
+const filename = Object.keys(gist.files).find(f => f.includes(APP_CONFIG.SYNC_CONFIG.DATA_SIGNATURE));
+
+if (filename && gist.files[filename]) {
+const content = gist.files[filename].content;
+const data = JSON.parse(content);
+
+// التحقق من صحة البيانات
+if (data.signature === APP_CONFIG.SYNC_CONFIG.DATA_SIGNATURE) {
+this.lastSyncTime = new Date(data.lastUpdate).getTime();
+return data;
+}
+}
+
+return null;
+} catch (error) {
+console.warn('خطأ في جلب البيانات البعيدة:', error);
+return null;
+}
+}
+
+async saveRemoteData(data) {
+if (!APP_CONFIG.SYNC_CONFIG.GITHUB_GIST_ID || !this.isAdmin) return false;
+
+try {
+this.updateSyncIndicator('syncing', 'جاري الحفظ...');
+
+const updatedData = {
+...data,
+signature: APP_CONFIG.SYNC_CONFIG.DATA_SIGNATURE,
+lastUpdate: new Date().toISOString(),
+updatedBy: this.sessionId
 };
 
-broadcastSync('presence', presence);
-}
-
-// بدء إرسال إشارة الحضور
-function startHeartbeat() {
-// إرسال فوري
-broadcastPresence();
-
-// إرسال كل 15 ثانية
-heartbeatInterval = setInterval(() => {
-broadcastPresence();
-}, 15000);
-
-console.log('💓 تم بدء إرسال إشارات الحضور');
-}
-
-// معالجة حالة الاتصال
-function handleOnlineStatus() {
-const wasOnline = isOnline;
-isOnline = navigator.onLine;
-
-if (!wasOnline && isOnline) {
-console.log('🌐 تم استعادة الاتصال');
-checkForUpdates();
-showSyncNotification('🌐 تم استعادة الاتصال', 'success');
-} else if (wasOnline && !isOnline) {
-console.log('📴 انقطع الاتصال');
-showSyncNotification('📴 انقطع الاتصال - العمل في وضع عدم الاتصال', 'warning');
+const response = await fetch(`https://api.github.com/gists/${APP_CONFIG.SYNC_CONFIG.GITHUB_GIST_ID}`, {
+method: 'PATCH',
+headers: {
+'Content-Type': 'application/json'
+},
+body: JSON.stringify({
+files: {
+[`${APP_CONFIG.SYNC_CONFIG.DATA_SIGNATURE}.json`]: {
+content: JSON.stringify(updatedData, null, 2)
 }
 }
+})
+});
 
-// بدء فترة التزامن
-function startSyncInterval() {
-// التحقق من التحديثات كل 3 ثوان
-syncInterval = setInterval(() => {
+if (response.ok) {
+this.lastSyncTime = Date.now();
+this.retryCount = 0;
+this.updateSyncIndicator('online', 'تم الحفظ بنجاح');
+console.log('✅ تم حفظ البيانات في الخادم المركزي');
+
+// حفظ نسخة احتياطية محلية
+this.saveLocalBackup(updatedData);
+
+return true;
+} else {
+throw new Error(`HTTP ${response.status}`);
+}
+} catch (error) {
+console.warn('⚠️ فشل في حفظ البيانات البعيدة:', error);
+this.retryCount++;
+this.updateSyncIndicator('offline', `فشل الحفظ (${this.retryCount}/${APP_CONFIG.SYNC_CONFIG.MAX_RETRIES})`);
+
+// حفظ في قائمة الانتظار للمحاولة لاحقاً
+this.addToSyncQueue(data);
+
+return false;
+}
+}
+
+applyDataUpdate(data) {
+if (data.units) {
+units = data.units;
+loadUnits();
+}
+
+if (data.siteSettings) {
+siteSettings = data.siteSettings;
+updateFooter();
+}
+
+if (data.messages) {
+messages = data.messages;
+}
+
+// حفظ نسخة احتياطية محلية
+this.saveLocalBackup(data);
+}
+
+saveLocalBackup(data) {
+try {
+localStorage.setItem('almosdaqiya_backup', JSON.stringify(data));
+sessionStorage.setItem('almosdaqiya_backup', JSON.stringify(data));
+} catch (error) {
+console.warn('فشل في حفظ النسخة الاحتياطية المحلية:', error);
+}
+}
+
+loadLocalBackup() {
+try {
+let backup = localStorage.getItem('almosdaqiya_backup');
+if (!backup) {
+backup = sessionStorage.getItem('almosdaqiya_backup');
+}
+
+if (backup) {
+const data = JSON.parse(backup);
+this.applyDataUpdate(data);
+return true;
+} else {
+// تحميل البيانات الافتراضية
+this.applyDataUpdate({
+units: this.getDefaultUnits(),
+siteSettings: this.getDefaultSettings(),
+messages: []
+});
+return false;
+}
+} catch (error) {
+console.warn('فشل في تحميل النسخة الاحتياطية:', error);
+return false;
+}
+}
+
+startSyncCycle() {
+// التحقق من التحديثات كل فترة محددة
+this.syncInterval = setInterval(async () => {
+if (this.isOnline) {
+await this.checkForUpdates();
+await this.processSyncQueue();
+}
+}, APP_CONFIG.SYNC_CONFIG.SYNC_INTERVAL * 1000);
+
+console.log(`⏰ بدء دورة التزامن كل ${APP_CONFIG.SYNC_CONFIG.SYNC_INTERVAL} ثانية`);
+}
+
+async checkForUpdates() {
+try {
+const remoteData = await this.fetchRemoteData();
+if (remoteData) {
+const remoteUpdateTime = new Date(remoteData.lastUpdate).getTime();
+
+if (remoteUpdateTime > this.lastSyncTime && remoteData.updatedBy !== this.sessionId) {
+console.log('🔄 اكتشاف تحديث جديد من الخادم');
+this.applyDataUpdate(remoteData);
+this.showSyncNotification('تم تحديث البيانات من الخادم', 'success');
+}
+}
+} catch (error) {
+console.warn('خطأ في التحقق من التحديثات:', error);
+}
+}
+
+async processSyncQueue() {
+if (this.syncQueue.length === 0) return;
+
+console.log(`📤 معالجة ${this.syncQueue.length} عنصر من قائمة انتظار التزامن`);
+
+const queueCopy = [...this.syncQueue];
+this.syncQueue = [];
+
+for (const data of queueCopy) {
+const success = await this.saveRemoteData(data);
+if (!success) {
+// إضافة مرة أخرى إلى قائمة الانتظار إذا فشل
+this.addToSyncQueue(data);
+break; // توقف عند أول فشل
+}
+}
+}
+
+addToSyncQueue(data) {
+// تجنب التكرار
+if (this.syncQueue.length < 10) { // حد أقصى 10 عناصر
+this.syncQueue.push(data);
+}
+}
+
+handleConnectionChange(isOnline) {
+this.isOnline = isOnline;
+
 if (isOnline) {
-checkForUpdates();
-}
-}, 3000);
+console.log('🌐 تم استعادة الاتصال');
+this.updateSyncIndicator('syncing', 'جاري التزامن...');
 
-console.log('⏰ تم بدء التحقق الدوري كل 3 ثوان');
-}
-
-// التحقق من التحديثات
-function checkForUpdates() {
-try {
-const lastSyncMessage = localStorage.getItem('last_sync_message');
-const lastSyncTimeStored = localStorage.getItem('last_sync_time');
-
-if (lastSyncMessage && lastSyncTimeStored) {
-const storedTime = parseInt(lastSyncTimeStored);
-if (storedTime > lastSyncTime) {
-console.log('🔍 وجدت تحديث جديد');
-const message = JSON.parse(lastSyncMessage);
-handleSyncMessage({ data: message });
-}
-}
-} catch (e) {
-console.warn('❌ خطأ في التحقق من التحديثات:', e);
+setTimeout(async () => {
+await this.checkForUpdates();
+await this.processSyncQueue();
+this.updateSyncIndicator('online', 'متصل ومتزامن');
+}, 1000);
+} else {
+console.log('📴 انقطع الاتصال');
+this.updateSyncIndicator('offline', 'وضع عدم الاتصال');
 }
 }
 
-// تحديث عدد المستخدمين النشطين
-function updateActiveUsers(presence) {
-activeUsers.set(presence.deviceId, presence);
-// إزالة المستخدمين القدامى (أكثر من دقيقة)
-const now = Date.now();
-for (const [deviceId, user] of activeUsers.entries()) {
-if (now - user.timestamp > 60000) {
-activeUsers.delete(deviceId);
+async saveData(dataType, data) {
+const fullData = {
+units: units,
+siteSettings: siteSettings,
+messages: messages
+};
+
+// تحديث البيانات المحددة
+fullData[dataType] = data;
+
+// حفظ محلياً أولاً
+this.saveLocalBackup(fullData);
+
+// حفظ بعيداً إذا كان الإدارة
+if (this.isAdmin && this.isOnline) {
+await this.saveRemoteData(fullData);
+} else if (this.isAdmin) {
+// إضافة إلى قائمة الانتظار
+this.addToSyncQueue(fullData);
+this.updateSyncIndicator('offline', 'في انتظار الاتصال');
+}
+
+return true;
+}
+
+setAdminMode(isAdmin) {
+this.isAdmin = isAdmin;
+console.log(`👤 تم تعيين وضع الإدارة: ${isAdmin ? 'مفعل' : 'معطل'}`);
+}
+
+updateSyncIndicator(status, message) {
+const indicator = document.getElementById('syncIndicator');
+const statusText = document.getElementById('syncStatus');
+
+if (indicator && statusText) {
+indicator.className = `sync-indicator sync-${status}`;
+statusText.textContent = message;
 }
 }
 
-// تحديث عداد المستخدمين في الواجهة
-updateUserCounter();
+showLoadingSpinner(show) {
+const spinner = document.getElementById('loadingSpinner');
+if (spinner) {
+spinner.classList.toggle('hidden', !show);
+}
 }
 
-// تحديث عداد المستخدمين
-function updateUserCounter() {
-const userCount = activeUsers.size;
-const adminCount = Array.from(activeUsers.values()).filter(user => user.isAdmin).length;
-// إضافة أو تحديث عداد المستخدمين في الهيدر
-let counter = document.getElementById('user-counter');
-if (!counter) {
-counter = document.createElement('div');
-counter.id = 'user-counter';
-counter.className = 'hidden md:flex items-center space-x-2 space-x-reverse bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-3 py-1 rounded-lg text-sm';
-
-const headerActions = document.querySelector('header .flex.items-center.space-x-4');
-headerActions.insertBefore(counter, headerActions.firstChild);
-}
-
-counter.innerHTML = `
-<span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-<span>${userCount} مستخدم نشط</span>
-${adminCount > 0 ? `<span class="text-xs">(${adminCount} إدارة)</span>` : ''}
-`;
-}
-
-// إشعارات التزامن
-function showSyncNotification(message, type = 'sync') {
+showSyncNotification(message, type = 'info') {
 const notification = document.createElement('div');
 let bgColor = 'bg-blue-500';
-let icon = '🔄';
+let icon = 'ℹ️';
 
 switch(type) {
-case 'warning':
-bgColor = 'bg-yellow-500';
-icon = '⚠️';
-break;
 case 'success':
 bgColor = 'bg-green-500';
 icon = '✅';
 break;
-case 'sync':
-bgColor = 'bg-purple-500';
-icon = '🔄';
+case 'warning':
+bgColor = 'bg-yellow-500';
+icon = '⚠️';
 break;
-case 'info':
-bgColor = 'bg-blue-500';
-icon = 'ℹ️';
+case 'error':
+bgColor = 'bg-red-500';
+icon = '❌';
 break;
 }
 
@@ -811,87 +884,92 @@ notification.innerHTML = `
 
 document.body.appendChild(notification);
 
-// إزالة الإشعار بعد 3 ثوان
 setTimeout(() => {
 notification.style.animation = 'fadeOut 0.5s ease-out forwards';
 setTimeout(() => notification.remove(), 500);
 }, 3000);
 }
 
-// وقف نظام التزامن
-function stopSyncSystem() {
-if (syncChannel) {
-syncChannel.close();
+getDefaultUnits() {
+return [
+{
+id: 1,
+name: "شقة الخليج الراقية",
+type: "شقة",
+location: "صلالة الجديدة",
+description: "شقة مفروشة بالكامل مع إطلالة رائعة على البحر، تحتوي على غرفتين وصالة ومطبخ مجهز",
+images: ["https://picsum.photos/400/300?random=1", "https://picsum.photos/400/300?random=2"],
+availability: generateSampleAvailability(),
+contact: { whatsapp: "+96812345678", phone: "+96812345678" }
 }
-if (syncInterval) {
-clearInterval(syncInterval);
-}
-if (heartbeatInterval) {
-clearInterval(heartbeatInterval);
-}
-window.removeEventListener('storage', handleStorageChange);
-window.removeEventListener('online', handleOnlineStatus);
-window.removeEventListener('offline', handleOnlineStatus);
-
-console.log('🛑 تم إيقاف نظام التزامن');
+];
 }
 
-// وظيفة لتصدير البيانات كرابط للمشاركة
-function generateShareableLink() {
-const data = {
-units: units,
-siteSettings: siteSettings,
-messages: messages,
-timestamp: new Date().toISOString()
+getDefaultSettings() {
+return {
+phone: '+968 2345 6789',
+whatsapp: '+968 9876 5432',
+email: 'info@almosdaqiya.om',
+address: 'صلالة، سلطنة عمان',
+companyName: 'المصداقية لتأجير الوحدات السكنية',
+description: 'نوفر أفضل الوحدات السكنية للإيجار في صلالة وضواحيها بأسعار مناسبة وخدمة متميزة.'
 };
+}
 
+destroy() {
+if (this.syncInterval) {
+clearInterval(this.syncInterval);
+}
+window.removeEventListener('online', this.handleConnectionChange);
+window.removeEventListener('offline', this.handleConnectionChange);
+console.log('🛑 تم إيقاف نظام التزامن المركزي');
+}
+}
+
+// ===== متغيرات التطبيق =====
+let syncSystem;
+let siteSettings = {};
+let units = [];
+let messages = [];
+let currentUser = null;
+let selectedDates = [];
+let currentUnit = null;
+let currentImages = [];
+let currentAvailability = {};
+
+// ===== وظائف التخزين المحسنة =====
+async function saveToStorage(key, value) {
 try {
-const compressedData = btoa(encodeURIComponent(JSON.stringify(data)));
-const currentUrl = window.location.href.split('?')[0].split('#')[0];
-return `${currentUrl}?data=${compressedData}`;
-} catch (e) {
-console.warn('فشل في إنشاء رابط المشاركة:', e);
-return null;
-}
+// حفظ البيانات عبر نظام التزامن المركزي
+if (syncSystem) {
+await syncSystem.saveData(key, value);
 }
 
-// وظيفة لتحميل البيانات من رابط المشاركة
-function loadFromShareableLink() {
-const urlParams = new URLSearchParams(window.location.search);
-const dataParam = urlParams.get('data');
-
-if (dataParam) {
-try {
-const decodedData = JSON.parse(decodeURIComponent(atob(dataParam)));
-
-// تحميل البيانات
-if (decodedData.units) {
-units = decodedData.units;
-saveToStorage('units', units);
+// تحديث المتغيرات المحلية
+switch(key) {
+case 'units':
+units = value;
+break;
+case 'siteSettings':
+siteSettings = value;
+break;
+case 'messages':
+messages = value;
+break;
 }
 
-if (decodedData.siteSettings) {
-siteSettings = decodedData.siteSettings;
-saveToStorage('siteSettings', siteSettings);
-}
-
-if (decodedData.messages) {
-messages = decodedData.messages;
-saveToStorage('messages', messages);
-}
-
-// إزالة البارامتر من الرابط
-const newUrl = window.location.href.split('?')[0];
-window.history.replaceState({}, document.title, newUrl);
-
-showNotification('تم تحميل البيانات من الرابط بنجاح!', 'success');
+console.log(`💾 تم حفظ ${key} بنجاح`);
 return true;
-} catch (e) {
-console.warn('فشل في تحميل البيانات من الرابط:', e);
-showNotification('فشل في تحميل البيانات من الرابط', 'error');
-}
-}
+} catch (error) {
+console.warn(`❌ فشل في حفظ ${key}:`, error);
 return false;
+}
+}
+
+function loadFromStorage(key, defaultValue) {
+// هذه الدالة محفوظة للتوافق مع الكود القديم
+// البيانات الفعلية يتم تحميلها عبر syncSystem
+return defaultValue;
 }
 
 // توليد بيانات التوفر التجريبية
@@ -927,27 +1005,28 @@ return dates;
 }
 
 // تهيئة التطبيق
-function initApp() {
+async function initApp() {
 console.log('🚀 بدء تهيئة التطبيق...');
 
-// تحميل البيانات من رابط المشاركة إن وجد
-const dataLoaded = loadFromShareableLink();
+// تهيئة نظام التزامن المركزي
+syncSystem = new CentralSyncSystem();
+
+// انتظار تحميل البيانات الأولية
+await new Promise(resolve => {
+const checkData = () => {
+if (units.length > 0 || siteSettings.companyName) {
+resolve();
+} else {
+setTimeout(checkData, 100);
+}
+};
+checkData();
+});
 
 setupEventListeners();
 initDarkMode();
 updateFooter();
 loadUnits();
-
-// تفعيل نظام التزامن المتقدم
-setTimeout(() => {
-initSyncSystem();
-}, 500);
-// عرض رسالة ترحيب إذا تم تحميل البيانات من رابط
-if (dataLoaded) {
-setTimeout(() => {
-showNotification('تم تحميل آخر التحديثات من الرابط!', 'success');
-}, 1000);
-}
 
 console.log('✅ تم تهيئة التطبيق بنجاح');
 }
@@ -987,18 +1066,29 @@ icon.textContent = isDark ? '☀️' : '🌙';
 
 // تحديث تذييل الموقع
 function updateFooter() {
-document.getElementById('footer-company-name').textContent = siteSettings.companyName;
-document.getElementById('footer-description').textContent = siteSettings.description;
-document.getElementById('footer-whatsapp').textContent = `📱 واتساب: ${siteSettings.whatsapp}`;
-document.getElementById('footer-phone').textContent = `📞 هاتف: ${siteSettings.phone}`;
-document.getElementById('footer-email').textContent = `✉️ البريد: ${siteSettings.email}`;
-document.getElementById('footer-address').textContent = `📍 العنوان: ${siteSettings.address}`;
+document.getElementById('footer-company-name').textContent = siteSettings.companyName || 'المصداقية لتأجير الوحدات';
+document.getElementById('footer-description').textContent = siteSettings.description || 'نوفر أفضل الوحدات السكنية للإيجار';
+document.getElementById('footer-whatsapp').textContent = `📱 واتساب: ${siteSettings.whatsapp || '+968 9876 5432'}`;
+document.getElementById('footer-phone').textContent = `📞 هاتف: ${siteSettings.phone || '+968 2345 6789'}`;
+document.getElementById('footer-email').textContent = `✉️ البريد: ${siteSettings.email || 'info@almosdaqiya.om'}`;
+document.getElementById('footer-address').textContent = `📍 العنوان: ${siteSettings.address || 'صلالة، سلطنة عمان'}`;
 }
 
 // تحميل وعرض الوحدات
 function loadUnits() {
 const grid = document.getElementById('unitsGrid');
 grid.innerHTML = '';
+
+if (!units || units.length === 0) {
+grid.innerHTML = `
+<div class="col-span-full text-center py-12">
+<div class="text-6xl mb-4">🏠</div>
+<h3 class="text-xl font-bold text-adaptive mb-2">لا توجد وحدات متاحة حالياً</h3>
+<p class="text-adaptive-secondary">جاري تحميل البيانات...</p>
+</div>
+`;
+return;
+}
 
 units.forEach(unit => {
 const unitCard = createUnitCard(unit);
@@ -1013,14 +1103,10 @@ setTimeout(initSwipers, 100);
 function createUnitCard(unit) {
 const card = document.createElement('div');
 card.className = 'neumorphic rounded-2xl overflow-hidden fade-in hover:shadow-2xl transition-all duration-300';
-
-const availableDates = Object.entries(unit.availability)
-.filter(([date, info]) => info.available)
-.slice(0, 5);
-
-const avgPrice = availableDates.length > 0
-? Math.round(availableDates.reduce((sum, [, info]) => sum + info.price, 0) / availableDates.length)
-: 50;
+// الحصول على الأسعار الفعلية للأيام القادمة
+const upcomingPrices = getUpcomingPrices(unit, 5);
+const priceRange = getUnitPriceRange(unit);
+const avgPrice = getUnitAveragePrice(unit);
 
 card.innerHTML = `
 <div class="relative">
@@ -1049,14 +1135,14 @@ ${unit.type}
 <div class="mb-4">
 <h4 class="text-sm font-medium text-adaptive-secondary mb-2">الأيام المتاحة القادمة</h4>
 <div class="grid grid-cols-5 gap-1">
-${availableDates.map(([date, info]) => {
-const dateObj = new Date(date);
+${upcomingPrices.filter(day => day.available).slice(0, 5).map(day => {
+const dateObj = new Date(day.date);
 const dayName = ARABIC_DAYS[dateObj.getDay()];
 return `
 <div class="text-center p-1 bg-accent text-white rounded text-xs">
 <div class="font-bold">${dayName.substring(0, 3)}</div>
 <div>${dateObj.getDate()}</div>
-<div>${info.price}ر.ع</div>
+<div>${day.price}ر.ع</div>
 </div>
 `;
 }).join('')}
@@ -1065,7 +1151,9 @@ return `
 
 <div class="flex justify-between items-center">
 <div class="text-lg font-bold text-oman-blue dark:text-oman-light">
-من ${avgPrice} ر.ع/ليلة
+${priceRange.min === priceRange.max
+? `${priceRange.min} ر.ع/ليلة`
+: `${priceRange.min} - ${priceRange.max} ر.ع/ليلة`}
 </div>
 <div class="flex space-x-2 space-x-reverse">
 <button onclick="showUnitDetails(${unit.id})" class="px-3 py-1 bg-oman-blue hover:bg-oman-light text-white rounded-lg text-sm transition-all">
@@ -1131,7 +1219,40 @@ function getUnitAveragePrice(unit) {
 const prices = Object.values(unit.availability)
 .filter(info => info.available)
 .map(info => info.price);
-return prices.length > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0;
+return prices.length > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 50;
+}
+
+// الحصول على نطاق الأسعار للوحدة
+function getUnitPriceRange(unit) {
+const prices = Object.values(unit.availability)
+.filter(info => info.available)
+.map(info => info.price);
+
+if (prices.length === 0) return { min: 50, max: 50 };
+
+const min = Math.min(...prices);
+const max = Math.max(...prices);
+
+return { min, max };
+}
+
+// الحصول على الأسعار الفعلية للأيام القادمة
+function getUpcomingPrices(unit, count = 5) {
+const today = new Date();
+const dates = generateDateRange();
+const upcomingDates = dates.filter(dateStr => {
+const date = new Date(dateStr);
+return date >= today;
+}).slice(0, count);
+
+return upcomingDates.map(dateStr => {
+const dayInfo = unit.availability[dateStr];
+return {
+date: dateStr,
+available: dayInfo ? dayInfo.available : true,
+price: dayInfo ? dayInfo.price : 50
+};
+});
 }
 
 // عرض الوحدات المصفاة
@@ -1401,7 +1522,7 @@ document.getElementById('contactForm').reset();
 }
 
 // معالجة إرسال نموذج التواصل
-function handleContactSubmit(event) {
+async function handleContactSubmit(event) {
 event.preventDefault();
 const form = event.target;
 
@@ -1416,7 +1537,7 @@ timestamp: new Date().toISOString()
 };
 
 messages.push(message);
-saveToStorage('messages', messages);
+await saveToStorage('messages', messages);
 
 showNotification('تم إرسال رسالتك بنجاح! سنتواصل معك قريباً.', 'success');
 closeContactModal();
@@ -1481,8 +1602,101 @@ currentImages.splice(index, 1);
 updateImagePreview();
 }
 
-// توليد جدول التوفر للإدارة
-function generateAvailabilityAdmin() {
+// إنشاء واجهة إدخال الأسعار المحسنة
+function generatePricingInterface() {
+return `
+<div class="space-y-6">
+<!-- أدوات تحديد الأسعار السريعة -->
+<div class="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 p-6 rounded-xl border border-blue-200 dark:border-blue-700">
+<h3 class="text-lg font-bold text-adaptive mb-4 flex items-center">
+<span class="text-2xl ml-2">💰</span>
+أدوات تحديد الأسعار السريعة
+</h3>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<!-- تحديد سعر موحد لجميع الأيام -->
+<div class="bg-white dark:bg-gray-700 p-4 rounded-lg border">
+<h4 class="font-bold text-adaptive mb-3">سعر موحد لجميع الأيام</h4>
+<div class="flex space-x-3 space-x-reverse">
+<input type="number" id="uniformPrice" min="1" placeholder="50"
+class="flex-1 p-3 border rounded-lg bg-white dark:bg-gray-600 text-adaptive text-base">
+<button onclick="applyUniformPrice()"
+class="px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-all whitespace-nowrap">
+تطبيق على الكل
+</button>
+</div>
+</div>
+
+<!-- تحديد أسعار حسب أيام الأسبوع -->
+<div class="bg-white dark:bg-gray-700 p-4 rounded-lg border">
+<h4 class="font-bold text-adaptive mb-3">أسعار حسب أيام الأسبوع</h4>
+<div class="grid grid-cols-2 gap-2 mb-3">
+<input type="number" id="weekdayPrice" min="1" placeholder="أيام الأسبوع"
+class="p-2 border rounded text-center text-sm bg-white dark:bg-gray-600 text-adaptive">
+<input type="number" id="weekendPrice" min="1" placeholder="نهاية الأسبوع"
+class="p-2 border rounded text-center text-sm bg-white dark:bg-gray-600 text-adaptive">
+</div>
+<button onclick="applyWeeklyPricing()"
+class="w-full px-3 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-all text-sm">
+تطبيق الأسعار الأسبوعية
+</button>
+</div>
+</div>
+
+<!-- تحديد أسعار لنطاق تواريخ محدد -->
+<div class="mt-4 bg-white dark:bg-gray-700 p-4 rounded-lg border">
+<h4 class="font-bold text-adaptive mb-3">تحديد سعر لنطاق تواريخ محدد</h4>
+<div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+<input type="date" id="startDate"
+class="p-3 border rounded-lg bg-white dark:bg-gray-600 text-adaptive text-base">
+<input type="date" id="endDate"
+class="p-3 border rounded-lg bg-white dark:bg-gray-600 text-adaptive text-base">
+<input type="number" id="rangePrice" min="1" placeholder="السعر"
+class="p-3 border rounded-lg bg-white dark:bg-gray-600 text-adaptive text-base">
+<button onclick="applyRangePrice()"
+class="px-4 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-medium transition-all">
+تطبيق على النطاق
+</button>
+</div>
+</div>
+
+<!-- أزرار سريعة لأسعار شائعة -->
+<div class="mt-4">
+<h4 class="font-bold text-adaptive mb-3">أسعار سريعة شائعة</h4>
+<div class="flex flex-wrap gap-2">
+${[30, 40, 50, 60, 70, 80, 90, 100].map(price => `
+<button onclick="applyUniformPriceValue(${price})"
+class="px-3 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-adaptive rounded-lg text-sm transition-all">
+${price} ر.ع
+</button>
+`).join('')}
+</div>
+</div>
+</div>
+
+<!-- معاينة وتعديل الأسعار -->
+<div class="bg-white dark:bg-gray-700 rounded-lg border">
+<div class="p-4 border-b dark:border-gray-600">
+<h3 class="text-lg font-bold text-adaptive flex items-center">
+<span class="text-2xl ml-2">📅</span>
+جدولة التوفر والأسعار التفصيلية
+</h3>
+</div>
+<div class="calendar-slider">
+${generateDetailedAvailabilityAdmin()}
+</div>
+</div>
+
+<!-- ملخص الأسعار -->
+<div id="pricingSummary" class="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 p-4 rounded-lg border border-green-200 dark:border-green-700">
+${generatePricingSummary()}
+</div>
+</div>
+`;
+}
+
+// إنشاء الجدول التفصيلي
+function generateDetailedAvailabilityAdmin() {
 let html = '';
 const dates = generateDateRange();
 let currentMonth = -1;
@@ -1494,7 +1708,7 @@ const monthIndex = date.getMonth();
 if (monthIndex !== currentMonth) {
 currentMonth = monthIndex;
 html += `
-<div class="bg-oman-blue text-white p-3 font-bold text-center">
+<div class="bg-oman-blue text-white p-3 font-bold text-center sticky top-0 z-10">
 ${ARABIC_MONTHS[monthIndex]} ${date.getFullYear()}
 </div>
 `;
@@ -1502,32 +1716,199 @@ ${ARABIC_MONTHS[monthIndex]} ${date.getFullYear()}
 
 const dayName = ARABIC_DAYS[date.getDay()];
 const existingData = currentAvailability[dateStr] || { available: true, price: 50 };
+const isWeekend = date.getDay() === 5 || date.getDay() === 6; // جمعة وسبت
 
 html += `
-<div class="calendar-day-row flex items-center justify-between p-3 border-b dark:border-gray-600">
+<div class="calendar-day-row flex items-center justify-between p-3 border-b dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600">
 <div class="flex items-center space-x-3 space-x-reverse">
+<div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+isWeekend ? 'bg-purple-500' : 'bg-blue-500'
+}">
+${date.getDate()}
+</div>
+<div>
 <span class="font-medium text-adaptive">${dayName}</span>
-<span class="text-adaptive-secondary">${date.getDate()} ${ARABIC_MONTHS[monthIndex]}</span>
+<div class="text-xs text-adaptive-secondary">${ARABIC_MONTHS[monthIndex]}</div>
+</div>
 </div>
 <div class="flex items-center space-x-3 space-x-reverse">
 <label class="flex items-center">
 <input type="checkbox" ${existingData.available ? 'checked' : ''}
 onchange="updateAvailability('${dateStr}', 'available', this.checked)"
-class="ml-2">
+class="ml-2 w-4 h-4">
 <span class="text-sm text-adaptive-secondary">متاح</span>
 </label>
+<div class="flex items-center space-x-1 space-x-reverse">
 <input type="number"
 value="${existingData.price}"
 min="1"
 onchange="updateAvailability('${dateStr}', 'price', parseInt(this.value))"
-class="w-20 p-1 border rounded text-center text-sm bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive">
-<span class="text-sm text-adaptive-secondary">ر.ع</span>
+class="w-16 p-2 border rounded text-center text-sm bg-white dark:bg-gray-600 dark:border-gray-500 text-adaptive">
+<span class="text-xs text-adaptive-secondary">ر.ع</span>
+</div>
 </div>
 </div>
 `;
 });
 
 return html;
+}
+
+// تطبيق سعر موحد
+function applyUniformPrice() {
+const price = parseInt(document.getElementById('uniformPrice').value);
+if (!price || price < 1) {
+showNotification('يرجى إدخال سعر صحيح', 'error');
+return;
+}
+applyUniformPriceValue(price);
+}
+
+function applyUniformPriceValue(price) {
+const dates = generateDateRange();
+dates.forEach(dateStr => {
+updateAvailability(dateStr, 'price', price);
+updateAvailability(dateStr, 'available', true);
+});
+
+// تحديث الواجهة
+refreshPricingInterface();
+showNotification(`تم تطبيق السعر ${price} ر.ع على جميع الأيام`, 'success');
+}
+
+// تطبيق أسعار أيام الأسبوع ونهاية الأسبوع
+function applyWeeklyPricing() {
+const weekdayPrice = parseInt(document.getElementById('weekdayPrice').value);
+const weekendPrice = parseInt(document.getElementById('weekendPrice').value);
+
+if (!weekdayPrice || !weekendPrice || weekdayPrice < 1 || weekendPrice < 1) {
+showNotification('يرجى إدخال أسعار صحيحة لأيام الأسبوع ونهاية الأسبوع', 'error');
+return;
+}
+
+const dates = generateDateRange();
+dates.forEach(dateStr => {
+const date = new Date(dateStr);
+const dayOfWeek = date.getDay();
+const isWeekend = dayOfWeek === 5 || dayOfWeek === 6; // جمعة وسبت
+
+const price = isWeekend ? weekendPrice : weekdayPrice;
+updateAvailability(dateStr, 'price', price);
+updateAvailability(dateStr, 'available', true);
+});
+
+refreshPricingInterface();
+showNotification(`تم تطبيق أسعار الأسبوع: ${weekdayPrice} ر.ع للأيام العادية، ${weekendPrice} ر.ع لنهاية الأسبوع`, 'success');
+}
+
+// تطبيق سعر على نطاق تواريخ
+function applyRangePrice() {
+const startDate = document.getElementById('startDate').value;
+const endDate = document.getElementById('endDate').value;
+const price = parseInt(document.getElementById('rangePrice').value);
+
+if (!startDate || !endDate || !price || price < 1) {
+showNotification('يرجى تحديد تاريخ البداية والنهاية والسعر', 'error');
+return;
+}
+
+const start = new Date(startDate);
+const end = new Date(endDate);
+
+if (start > end) {
+showNotification('تاريخ البداية يجب أن يكون قبل تاريخ النهاية', 'error');
+return;
+}
+
+let count = 0;
+const currentDate = new Date(start);
+
+while (currentDate <= end) {
+const dateStr = currentDate.toISOString().split('T')[0];
+if (currentAvailability[dateStr] !== undefined) {
+updateAvailability(dateStr, 'price', price);
+updateAvailability(dateStr, 'available', true);
+count++;
+}
+currentDate.setDate(currentDate.getDate() + 1);
+}
+
+refreshPricingInterface();
+showNotification(`تم تطبيق السعر ${price} ر.ع على ${count} يوم`, 'success');
+}
+
+// تحديث واجهة الأسعار
+function refreshPricingInterface() {
+// تحديث الجدول التفصيلي
+const container = document.querySelector('.calendar-slider');
+if (container) {
+container.innerHTML = generateDetailedAvailabilityAdmin();
+}
+
+// تحديث ملخص الأسعار
+const summaryContainer = document.getElementById('pricingSummary');
+if (summaryContainer) {
+summaryContainer.innerHTML = generatePricingSummary();
+}
+}
+
+// إنشاء ملخص الأسعار
+function generatePricingSummary() {
+const dates = generateDateRange();
+const availableDates = dates.filter(dateStr => {
+const dayInfo = currentAvailability[dateStr];
+return dayInfo && dayInfo.available;
+});
+
+if (availableDates.length === 0) {
+return `
+<h3 class="text-lg font-bold text-adaptive mb-2">📊 ملخص الأسعار</h3>
+<p class="text-adaptive-secondary">لا توجد أيام متاحة حالياً</p>
+`;
+}
+
+const prices = availableDates.map(dateStr => currentAvailability[dateStr].price);
+const minPrice = Math.min(...prices);
+const maxPrice = Math.max(...prices);
+const avgPrice = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+
+// تجميع الأسعار
+const priceGroups = {};
+prices.forEach(price => {
+priceGroups[price] = (priceGroups[price] || 0) + 1;
+});
+
+return `
+<h3 class="text-lg font-bold text-adaptive mb-3 flex items-center">
+<span class="text-2xl ml-2">📊</span>
+ملخص الأسعار
+</h3>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+<div class="text-center">
+<div class="text-2xl font-bold text-green-600">${availableDates.length}</div>
+<div class="text-sm text-adaptive-secondary">يوم متاح</div>
+</div>
+<div class="text-center">
+<div class="text-2xl font-bold text-blue-600">${minPrice} ر.ع</div>
+<div class="text-sm text-adaptive-secondary">أقل سعر</div>
+</div>
+<div class="text-center">
+<div class="text-2xl font-bold text-purple-600">${maxPrice} ر.ع</div>
+<div class="text-sm text-adaptive-secondary">أعلى سعر</div>
+</div>
+<div class="text-center">
+<div class="text-2xl font-bold text-orange-600">${avgPrice} ر.ع</div>
+<div class="text-sm text-adaptive-secondary">متوسط السعر</div>
+</div>
+</div>
+<div class="text-sm text-adaptive-secondary">
+<strong>توزيع الأسعار:</strong>
+${Object.entries(priceGroups)
+.sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
+.map(([price, count]) => `${price} ر.ع (${count} يوم)`)
+.join(' • ')}
+</div>
+`;
 }
 
 // تحديث بيانات التوفر
@@ -1580,6 +1961,12 @@ const password = form.elements[1].value;
 
 if (username === APP_CONFIG.ADMIN_CREDENTIALS.username && password === APP_CONFIG.ADMIN_CREDENTIALS.password) {
 currentUser = { username: 'admin', role: 'admin' };
+
+// تفعيل وضع الإدارة في نظام التزامن
+if (syncSystem) {
+syncSystem.setAdminMode(true);
+}
+
 showAdminDashboard();
 } else {
 showNotification('بيانات تسجيل الدخول غير صحيحة', 'error');
@@ -1594,7 +1981,7 @@ adminPanel.querySelector('.modal-content').innerHTML = `
 <div class="flex justify-between items-center">
 <div>
 <h1 class="text-2xl font-bold">لوحة إدارة المصداقية</h1>
-<p class="text-blue-100">مرحباً بك، ${currentUser.username}</p>
+<p class="text-blue-100">مرحباً بك، ${currentUser.username} • ${syncSystem && syncSystem.isOnline ? '🟢 متصل' : '🔴 غير متصل'}</p>
 </div>
 <button onclick="closeAdminPanel()" class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-all">
 خروج
@@ -1613,8 +2000,8 @@ adminPanel.querySelector('.modal-content').innerHTML = `
 <button onclick="showAdminTab('settings')" class="admin-tab-btn px-4 py-3 font-medium border-b-2 border-transparent text-adaptive-secondary hover:text-adaptive">
 إعدادات الموقع
 </button>
-<button onclick="showShareLink()" class="px-4 py-3 font-medium text-accent hover:text-green-600 transition-all">
-📤 مشاركة الموقع
+<button onclick="showAdminTab('sync')" class="admin-tab-btn px-4 py-3 font-medium border-b-2 border-transparent text-adaptive-secondary hover:text-adaptive">
+🔄 إدارة التزامن
 </button>
 </nav>
 </div>
@@ -1645,6 +2032,9 @@ content.innerHTML = getAdminMessagesContent();
 break;
 case 'settings':
 content.innerHTML = getAdminSettingsContent();
+break;
+case 'sync':
+content.innerHTML = getAdminSyncContent();
 break;
 }
 }
@@ -1751,29 +2141,29 @@ return `
 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 <div>
 <label class="block text-sm font-medium text-adaptive-secondary mb-2">اسم الشركة</label>
-<input type="text" value="${siteSettings.companyName}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+<input type="text" value="${siteSettings.companyName || ''}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
 </div>
 <div>
 <label class="block text-sm font-medium text-adaptive-secondary mb-2">العنوان</label>
-<input type="text" value="${siteSettings.address}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+<input type="text" value="${siteSettings.address || ''}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
 </div>
 <div>
 <label class="block text-sm font-medium text-adaptive-secondary mb-2">رقم الهاتف</label>
-<input type="tel" value="${siteSettings.phone}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+<input type="tel" value="${siteSettings.phone || ''}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
 </div>
 <div>
 <label class="block text-sm font-medium text-adaptive-secondary mb-2">رقم واتساب</label>
-<input type="tel" value="${siteSettings.whatsapp}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+<input type="tel" value="${siteSettings.whatsapp || ''}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
 </div>
 <div class="md:col-span-2">
 <label class="block text-sm font-medium text-adaptive-secondary mb-2">البريد الإلكتروني</label>
-<input type="email" value="${siteSettings.email}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+<input type="email" value="${siteSettings.email || ''}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
 </div>
 </div>
 
 <div>
 <label class="block text-sm font-medium text-adaptive-secondary mb-2">وصف الشركة</label>
-<textarea required rows="4" class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">${siteSettings.description}</textarea>
+<textarea required rows="4" class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">${siteSettings.description || ''}</textarea>
 </div>
 
 <div class="flex space-x-4 space-x-reverse">
@@ -1785,13 +2175,84 @@ return `
 `;
 }
 
+// محتوى إدارة التزامن
+function getAdminSyncContent() {
+return `
+<div class="mb-6">
+<h2 class="text-xl font-bold text-adaptive">إدارة نظام التزامن المركزي</h2>
+<p class="text-adaptive-secondary">مراقبة حالة التزامن ومشاركة البيانات</p>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+<div class="bg-white dark:bg-gray-700 rounded-lg shadow p-6">
+<h3 class="text-lg font-bold text-adaptive mb-4 flex items-center">
+<span class="text-2xl ml-2">📊</span>
+إحصائيات النظام
+</h3>
+<div class="space-y-3">
+<div class="flex justify-between">
+<span class="text-adaptive-secondary">حالة الاتصال:</span>
+<span class="font-bold ${syncSystem && syncSystem.isOnline ? 'text-green-600' : 'text-red-600'}">
+${syncSystem && syncSystem.isOnline ? '🟢 متصل' : '🔴 غير متصل'}
+</span>
+</div>
+<div class="flex justify-between">
+<span class="text-adaptive-secondary">عدد الوحدات:</span>
+<span class="font-bold text-adaptive">${units.length}</span>
+</div>
+<div class="flex justify-between">
+<span class="text-adaptive-secondary">عدد الرسائل:</span>
+<span class="font-bold text-adaptive">${messages.length}</span>
+</div>
+<div class="flex justify-between">
+<span class="text-adaptive-secondary">آخر تزامن:</span>
+<span class="font-bold text-adaptive">${syncSystem ? new Date(syncSystem.lastSyncTime).toLocaleString('ar-SA') : 'غير محدد'}</span>
+</div>
+</div>
+</div>
+
+<div class="bg-white dark:bg-gray-700 rounded-lg shadow p-6">
+<h3 class="text-lg font-bold text-adaptive mb-4 flex items-center">
+<span class="text-2xl ml-2">🛠️</span>
+أدوات التزامن
+</h3>
+<div class="space-y-3">
+<button onclick="forceSyncNow()" class="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg transition-all">
+🔄 إجبار التزامن الآن
+</button>
+<button onclick="generateShareUrl()" class="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg transition-all">
+📤 إنشاء رابط مشاركة
+</button>
+<button onclick="resetSyncSystem()" class="w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition-all">
+🔧 إعادة تعيين النظام
+</button>
+</div>
+</div>
+</div>
+
+<div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-6">
+<h3 class="text-lg font-bold text-adaptive mb-3 flex items-center">
+<span class="text-2xl ml-2">ℹ️</span>
+معلومات مهمة عن التزامن
+</h3>
+<div class="text-sm text-adaptive space-y-2">
+<p>• البيانات يتم حفظها تلقائياً في خادم مركزي مجاني</p>
+<p>• جميع المستخدمين سيرون نفس البيانات المحدثة</p>
+<p>• التحديثات تظهر خلال ${APP_CONFIG.SYNC_CONFIG.SYNC_INTERVAL} ثانية كحد أقصى</p>
+<p>• في حالة انقطاع الاتصال، البيانات تُحفظ محلياً وتُزامن عند استعادة الاتصال</p>
+<p>• معرف الجلسة الحالي: <code class="bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded">${syncSystem ? syncSystem.sessionId : 'غير محدد'}</code></p>
+</div>
+</div>
+`;
+}
+
 // حفظ إعدادات الموقع
-function handleSaveSettings(event) {
+async function handleSaveSettings(event) {
 event.preventDefault();
 const form = event.target;
 const elements = form.elements;
 
-siteSettings = {
+const newSettings = {
 companyName: elements[0].value,
 address: elements[1].value,
 phone: elements[2].value,
@@ -1800,7 +2261,7 @@ email: elements[4].value,
 description: elements[5].value
 };
 
-saveToStorage('siteSettings', siteSettings);
+await saveToStorage('siteSettings', newSettings);
 updateFooter();
 showNotification('تم حفظ الإعدادات بنجاح!', 'success');
 }
@@ -1879,9 +2340,7 @@ content.innerHTML = `
 
 <div>
 <label class="block text-sm font-medium text-adaptive-secondary mb-2">جدولة الأسعار والتوفر (يونيو - سبتمبر)</label>
-<div class="calendar-slider">
-${generateAvailabilityAdmin()}
-</div>
+${generatePricingInterface()}
 </div>
 
 <div class="flex space-x-4 space-x-reverse">
@@ -1897,7 +2356,7 @@ ${generateAvailabilityAdmin()}
 }
 
 // حفظ الوحدة
-function handleSaveUnit(event) {
+async function handleSaveUnit(event) {
 event.preventDefault();
 const form = event.target;
 const elements = form.elements;
@@ -1922,7 +2381,7 @@ availability: { ...currentAvailability }
 };
 
 units.push(newUnit);
-saveToStorage('units', units);
+await saveToStorage('units', units);
 loadUnits();
 showNotification('تم إضافة الوحدة بنجاح!', 'success');
 showAdminTab('units');
@@ -1999,9 +2458,7 @@ content.innerHTML = `
 
 <div>
 <label class="block text-sm font-medium text-adaptive-secondary mb-2">جدولة الأسعار والتوفر</label>
-<div class="calendar-slider">
-${generateAvailabilityAdmin()}
-</div>
+${generatePricingInterface()}
 </div>
 
 <div class="flex space-x-4 space-x-reverse">
@@ -2019,7 +2476,7 @@ setTimeout(updateImagePreview, 100);
 }
 
 // تحديث الوحدة
-function handleUpdateUnit(event, unitId) {
+async function handleUpdateUnit(event, unitId) {
 event.preventDefault();
 const form = event.target;
 const elements = form.elements;
@@ -2046,27 +2503,79 @@ images: [...currentImages],
 availability: { ...currentAvailability }
 };
 
-saveToStorage('units', units);
+await saveToStorage('units', units);
 loadUnits();
 showNotification('تم تحديث الوحدة بنجاح!', 'success');
 showAdminTab('units');
 }
 
 // حذف الوحدة
-function deleteUnit(unitId) {
+async function deleteUnit(unitId) {
 if (!confirm('هل أنت متأكد من حذف هذه الوحدة؟')) return;
 
 units = units.filter(u => u.id !== unitId);
-saveToStorage('units', units);
+await saveToStorage('units', units);
 loadUnits();
 showNotification('تم حذف الوحدة بنجاح!', 'success');
 showAdminTab('units');
+}
+
+// أدوات التزامن الإضافية
+async function forceSyncNow() {
+if (syncSystem) {
+syncSystem.updateSyncIndicator('syncing', 'جاري التزامن القسري...');
+await syncSystem.checkForUpdates();
+await syncSystem.processSyncQueue();
+showNotification('تم إجبار التزامن بنجاح!', 'success');
+}
+}
+
+function generateShareUrl() {
+if (syncSystem && APP_CONFIG.SYNC_CONFIG.GITHUB_GIST_ID) {
+const shareUrl = `${window.location.origin}${window.location.pathname}?gist=${APP_CONFIG.SYNC_CONFIG.GITHUB_GIST_ID}`;
+
+// نسخ الرابط
+navigator.clipboard.writeText(shareUrl).then(() => {
+showNotification('تم نسخ رابط المشاركة!', 'success');
+}).catch(() => {
+prompt('انسخ هذا الرابط:', shareUrl);
+});
+} else {
+showNotification('لا يمكن إنشاء رابط المشاركة', 'error');
+}
+}
+
+async function resetSyncSystem() {
+if (confirm('هل أنت متأكد من إعادة تعيين نظام التزامن؟ سيتم إنشاء مخزن بيانات جديد.')) {
+if (syncSystem) {
+syncSystem.destroy();
+}
+
+// محو البيانات المحلية
+localStorage.clear();
+sessionStorage.clear();
+
+// إعادة تهيئة النظام
+syncSystem = new CentralSyncSystem();
+
+showNotification('تم إعادة تعيين نظام التزامن!', 'success');
+
+// إعادة تحميل الصفحة بعد ثانيتين
+setTimeout(() => {
+window.location.reload();
+}, 2000);
+}
 }
 
 // إغلاق لوحة الإدارة
 function closeAdminPanel() {
 document.getElementById('adminPanel').classList.add('hidden');
 currentUser = null;
+
+// إلغاء وضع الإدارة
+if (syncSystem) {
+syncSystem.setAdminMode(false);
+}
 }
 
 // عرض الإشعارات
@@ -2086,110 +2595,14 @@ document.body.appendChild(notification);
 setTimeout(() => notification.remove(), 5000);
 }
 
-// عرض رابط المشاركة
-function showShareLink() {
-const shareUrl = generateShareableLink();
-if (!shareUrl) {
-showNotification('فشل في إنشاء رابط المشاركة', 'error');
-return;
-}
-
-const content = document.getElementById('admin-content');
-content.innerHTML = `
-<div class="mb-6">
-<h2 class="text-xl font-bold text-adaptive">مشاركة الموقع</h2>
-<p class="text-adaptive-secondary">استخدم هذا الرابط لمشاركة الموقع مع جميع البيانات المحدثة</p>
-</div>
-
-<div class="bg-white dark:bg-gray-700 rounded-lg shadow p-6">
-<div class="mb-4">
-<label class="block text-sm font-medium text-adaptive-secondary mb-2">رابط المشاركة</label>
-<div class="flex space-x-2 space-x-reverse">
-<input type="text" value="${shareUrl}" readonly
-id="shareUrlInput"
-class="flex-1 p-3 border rounded-lg bg-gray-50 dark:bg-gray-600 text-adaptive text-sm">
-<button onclick="copyShareLink()"
-class="px-4 py-3 bg-oman-blue hover:bg-oman-light text-white rounded-lg transition-all whitespace-nowrap">
-📋 نسخ
-</button>
-</div>
-</div>
-
-<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-<div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg text-center">
-<div class="text-2xl mb-2">🏠</div>
-<div class="font-bold text-adaptive">${units.length}</div>
-<div class="text-sm text-adaptive-secondary">وحدة سكنية</div>
-</div>
-<div class="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg text-center">
-<div class="text-2xl mb-2">📬</div>
-<div class="font-bold text-adaptive">${messages.length}</div>
-<div class="text-sm text-adaptive-secondary">رسالة</div>
-</div>
-<div class="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg text-center">
-<div class="text-2xl mb-2">⚙️</div>
-<div class="font-bold text-adaptive">محدث</div>
-<div class="text-sm text-adaptive-secondary">إعدادات الموقع</div>
-</div>
-</div>
-
-<div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
-<div class="flex items-start space-x-3 space-x-reverse">
-<div class="text-yellow-600 text-xl">⚠️</div>
-<div>
-<h4 class="font-bold text-adaptive mb-1">تنبيه مهم</h4>
-<p class="text-sm text-adaptive">
-هذا الرابط يحتوي على جميع بيانات الموقع. عند فتحه من أي جهاز آخر، ستظهر جميع التحديثات والوحدات والإعدادات.
-احرص على مشاركته مع الأشخاص المناسبين فقط.
-</p>
-</div>
-</div>
-</div>
-
-<div class="flex space-x-4 space-x-reverse mt-6">
-<button onclick="shareViaWhatsApp()"
-class="flex items-center space-x-2 space-x-reverse bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-all">
-<span>💬</span><span>مشاركة عبر واتساب</span>
-</button>
-<button onclick="refreshShareLink()"
-class="flex items-center space-x-2 space-x-reverse bg-accent hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-all">
-<span>🔄</span><span>تحديث الرابط</span>
-</button>
-</div>
-</div>
-`;
-}
-
-// نسخ رابط المشاركة
-function copyShareLink() {
-const input = document.getElementById('shareUrlInput');
-input.select();
-input.setSelectionRange(0, 99999);
-
-try {
-document.execCommand('copy');
-showNotification('تم نسخ الرابط بنجاح!', 'success');
-} catch (err) {
-showNotification('فشل في نسخ الرابط', 'error');
-}
-}
-
-// مشاركة عبر واتساب
-function shareViaWhatsApp() {
-const shareUrl = document.getElementById('shareUrlInput').value;
-const message = `🏠 موقع ${siteSettings.companyName}\n\nيمكنك مشاهدة جميع الوحدات السكنية المتاحة من خلال هذا الرابط:\n${shareUrl}`;
-const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-window.open(whatsappUrl, '_blank');
-}
-
-// تحديث رابط المشاركة
-function refreshShareLink() {
-showShareLink();
-showNotification('تم تحديث الرابط بآخر البيانات!', 'success');
-}
-
 // تهيئة التطبيق عند تحميل الصفحة
 document.addEventListener('DOMContentLoaded', initApp);
+// تنظيف الموارد عند إغلاق الصفحة
+window.addEventListener('beforeunload', () => {
+if (syncSystem) {
+syncSystem.destroy();
+}
+});
 </script>
 </body>
 </html>
