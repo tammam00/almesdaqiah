@@ -1456,7 +1456,7 @@ const form = event.target;
 const username = form.elements[0].value;
 const password = form.elements[1].value;
 
-if (username ===AbuSalim && password ===19802002) {
+if (username === APP_CONFIG.ADMIN_CREDENTIALS.username && password === APP_CONFIG.ADMIN_CREDENTIALS.password) {
 currentUser = { username: 'admin', role: 'admin' };
 showAdminDashboard();
 } else {
