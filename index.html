@@ -434,10 +434,11 @@ ADMIN_CREDENTIALS: { username: 'AbuSalim', password: '19802002' },
 
 // إعدادات GitHub Repository
 GITHUB_CONFIG: {
-owner: 'tammam2002', // 👈 ضع اسم المستخدم الخاص بك هنا
-repo: 'almesdaqiya-data', // اسم المستودع
+owner: 'tammam00', // اسم المستخدم في GitHub
+repo: 'almesdaqiah-data', // اسم المستودع
 branch: 'main', // الفرع الأساسي
-dataFile: 'data.json' // اسم ملف البيانات
+dataFile: 'data.json', // اسم ملف البيانات
+token: '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' // التوكن الخاص بك
 },
 
 // إعدادات التزامن العامة
@@ -664,8 +665,13 @@ async init() {
 window.addEventListener('online', () => this.handleConnectionChange(true));
 window.addEventListener('offline', () => this.handleConnectionChange(false));
 
-// تحميل الـ Token المحفوظ (إن وجد)
+// تحميل الـ Token من الإعدادات أو التخزين المحلي
+if (APP_CONFIG.GITHUB_CONFIG.token) {
+this.setAdminToken(APP_CONFIG.GITHUB_CONFIG.token);
+console.log('🔑 تم تحميل GitHub Token من الإعدادات');
+} else {
 this.loadSavedToken();
+}
 
 // بدء دورة التزامن
 this.startSyncCycle();
