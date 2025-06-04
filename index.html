@@ -71,6 +71,11 @@ from { opacity: 0; transform: translateY(20px); }
 to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes fadeOut {
+from { opacity: 1; transform: translateY(0); }
+to { opacity: 0; transform: translateY(-20px); }
+}
+
 /* إصلاح مشكلة التمرير في النوافذ المنبثقة */
 .modal-container {
 overflow-y: auto;
@@ -206,7 +211,7 @@ background-color: #374151;
 </div>
 <div>
 <h1 class="text-2xl font-bold text-oman-blue dark:text-oman-light">المصداقية</h1>
-<p class="text-sm text-adaptive-secondary">للعقارات</p>
+<p class="text-sm text-adaptive-secondary">لتأجير الوحدات السكنية</p>
 </div>
 </div>
 
@@ -259,7 +264,7 @@ background-color: #374151;
 <option value="صلالة الغربية">صلالة الغربية</option>
 <option value="عوقد">عوقد</option>
 <option value="السعادة">السعادة</option>
-<option value="صحنوت">صحلنوت</option>
+<option value="صحنوت">صحنوت</option>
 <option value="ريسوت">ريسوت</option>
 </select>
 </div>
@@ -434,6 +439,9 @@ try {
 localStorage.setItem(key, JSON.stringify(value));
 // نسخ احتياطية في sessionStorage أيضاً
 sessionStorage.setItem(key, JSON.stringify(value));
+
+// بث فوري للتحديث
+forceBroadcastUpdate(key, value);
 } catch (e) {
 console.warn('خطأ في حفظ البيانات:', e);
 // في حالة فشل localStorage، جرب sessionStorage فقط
@@ -445,61 +453,103 @@ console.warn('فشل في حفظ البيانات في كلا المخازن:', 
 }
 }
 
-// نظام التزامن المتقدم بين جميع المستخدمين
+// ===== نظام التزامن المحسن والموثوق =====
 let syncChannel = null;
 let lastSyncTime = Date.now();
 let syncInterval = null;
+let heartbeatInterval = null;
 let isOnline = navigator.onLine;
+let deviceId = null;
+let activeUsers = new Map();
 
 // إنشاء قناة البث للتزامن
 function initSyncSystem() {
+console.log('🔄 بدء تهيئة نظام التزامن المتقدم...');
+
+// الحصول على معرف الجهاز
+deviceId = getDeviceId();
+console.log('📱 معرف الجهاز:', deviceId);
+
 try {
 // استخدام BroadcastChannel للتزامن بين التبويبات
-syncChannel = new BroadcastChannel('almosdaqiya-sync');
+syncChannel = new BroadcastChannel('almosdaqiya-sync-v2');
 syncChannel.addEventListener('message', handleSyncMessage);
+console.log('✅ تم تفعيل BroadcastChannel');
+
+// اختبار فوري
+setTimeout(() => {
+broadcastSync('test_connection', {
+message: 'اختبار الاتصال',
+time: new Date().toLocaleTimeString('ar-SA')
+});
+}, 500);
+
 } catch (e) {
-console.warn('BroadcastChannel غير مدعوم، استخدام localStorage فقط');
+console.warn('⚠️ BroadcastChannel غير مدعوم، استخدام localStorage فقط');
 }
 
 // مراقبة التغييرات في localStorage
 window.addEventListener('storage', handleStorageChange);
+console.log('✅ تم تفعيل مراقبة localStorage');
 
 // مراقبة حالة الاتصال
 window.addEventListener('online', handleOnlineStatus);
 window.addEventListener('offline', handleOnlineStatus);
 
-// التحقق الدوري من التحديثات
+// التحقق الدوري من التحديثات كل 3 ثوان
 startSyncInterval();
 
-// إرسال إشارة الحضور
-broadcastPresence();
+// إرسال إشارة الحضور كل 10 ثوان
+startHeartbeat();
+
+console.log('🎉 تم تهيئة نظام التزامن بنجاح!');
+showSyncNotification('🔄 تم تفعيل نظام التزامن', 'success');
 }
 
 // معالجة رسائل التزامن
 function handleSyncMessage(event) {
 const { type, data, timestamp, source } = event.data;
 
+console.log('📨 تم استقبال رسالة تزامن:', type, 'من:', source);
+
 // تجاهل الرسائل من نفس المصدر
-if (source === getDeviceId()) return;
+if (source === deviceId) {
+console.log('⏭️ تجاهل الرسالة من نفس المصدر');
+return;
+}
 
 // التحقق من أن الرسالة أحدث من آخر تزامن
-if (timestamp <= lastSyncTime) return;
+if (timestamp <= lastSyncTime) {
+console.log('⏭️ تجاهل الرسالة القديمة');
+return;
+}
 
 switch (type) {
+case 'test_connection':
+console.log('🧪 اختبار الاتصال:', data.message);
+showSyncNotification('✅ تم اختبار الاتصال: ' + data.time, 'sync');
+break;
+
 case 'units_updated':
+console.log('🏠 تحديث الوحدات');
 units = data;
 loadUnits();
-showSyncNotification('تم تحديث الوحدات');
+showSyncNotification('🏠 تم تحديث الوحدات', 'sync');
 break;
+
 case 'settings_updated':
+console.log('⚙️ تحديث الإعدادات');
 siteSettings = data;
 updateFooter();
-showSyncNotification('تم تحديث إعدادات الموقع');
+showSyncNotification('⚙️ تم تحديث إعدادات الموقع', 'sync');
 break;
+
 case 'message_added':
+console.log('📬 رسالة جديدة');
 messages = data;
-showSyncNotification('رسالة جديدة');
+showSyncNotification('📬 رسالة جديدة', 'sync');
 break;
+
 case 'presence':
 updateActiveUsers(data);
 break;
@@ -512,40 +562,54 @@ lastSyncTime = timestamp;
 function handleStorageChange(e) {
 if (e.storageArea !== localStorage) return;
 
+console.log('💾 تغيير في localStorage:', e.key);
+
 const timestamp = Date.now();
 let updated = false;
 
 switch(e.key) {
 case 'units':
-const newUnits = JSON.parse(e.newValue || '[]');
+if (e.newValue) {
+const newUnits = JSON.parse(e.newValue);
 if (JSON.stringify(newUnits) !== JSON.stringify(units)) {
+console.log('🏠 تحديث الوحدات من localStorage');
 units = newUnits;
 loadUnits();
 broadcastSync('units_updated', units, timestamp);
 updated = true;
 }
+}
 break;
+
 case 'siteSettings':
-const newSettings = JSON.parse(e.newValue || '{}');
+if (e.newValue) {
+const newSettings = JSON.parse(e.newValue);
 if (JSON.stringify(newSettings) !== JSON.stringify(siteSettings)) {
+console.log('⚙️ تحديث الإعدادات من localStorage');
 siteSettings = newSettings;
 updateFooter();
 broadcastSync('settings_updated', siteSettings, timestamp);
 updated = true;
 }
+}
 break;
+
 case 'messages':
-const newMessages = JSON.parse(e.newValue || '[]');
+if (e.newValue) {
+const newMessages = JSON.parse(e.newValue);
 if (newMessages.length > messages.length) {
+console.log('📬 رسالة جديدة من localStorage');
 messages = newMessages;
 broadcastSync('message_added', messages, timestamp);
 updated = true;
+}
 }
 break;
 }
 
 if (updated) {
 lastSyncTime = timestamp;
+console.log('✅ تم التحديث، آخر وقت تزامن:', new Date(lastSyncTime).toLocaleTimeString());
 }
 }
 
@@ -555,20 +619,44 @@ const message = {
 type,
 data,
 timestamp,
-source: getDeviceId()
+source: deviceId
 };
 
+console.log('📤 بث رسالة تزامن:', type);
+
 try {
+// البث عبر BroadcastChannel
 if (syncChannel) {
 syncChannel.postMessage(message);
+console.log('✅ تم البث عبر BroadcastChannel');
 }
-
-// حفظ في localStorage كنسخة احتياطية
+// حفظ في localStorage كنسخة احتياطية للأجهزة الأخرى
 localStorage.setItem('last_sync_message', JSON.stringify(message));
 localStorage.setItem('last_sync_time', timestamp.toString());
+console.log('✅ تم حفظ رسالة التزامن في localStorage');
+
 } catch (e) {
-console.warn('فشل في بث رسالة التزامن:', e);
+console.warn('❌ فشل في بث رسالة التزامن:', e);
 }
+}
+
+// بث فوري عند حفظ البيانات
+function forceBroadcastUpdate(key, value) {
+const timestamp = Date.now();
+
+setTimeout(() => {
+switch(key) {
+case 'units':
+broadcastSync('units_updated', value, timestamp);
+break;
+case 'siteSettings':
+broadcastSync('settings_updated', value, timestamp);
+break;
+case 'messages':
+broadcastSync('message_added', value, timestamp);
+break;
+}
+}, 100);
 }
 
 // الحصول على معرف الجهاز
@@ -577,6 +665,7 @@ let deviceId = localStorage.getItem('device_id');
 if (!deviceId) {
 deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 localStorage.setItem('device_id', deviceId);
+console.log('🆕 تم إنشاء معرف جهاز جديد:', deviceId);
 }
 return deviceId;
 }
@@ -584,15 +673,26 @@ return deviceId;
 // بث إشارة الحضور
 function broadcastPresence() {
 const presence = {
-deviceId: getDeviceId(),
+deviceId: deviceId,
 timestamp: Date.now(),
 userAgent: navigator.userAgent.substring(0, 50),
 isAdmin: currentUser !== null
 };
 
 broadcastSync('presence', presence);
-// تحديث إشارة الحضور كل 30 ثانية
-setTimeout(broadcastPresence, 30000);
+}
+
+// بدء إرسال إشارة الحضور
+function startHeartbeat() {
+// إرسال فوري
+broadcastPresence();
+
+// إرسال كل 15 ثانية
+heartbeatInterval = setInterval(() => {
+broadcastPresence();
+}, 15000);
+
+console.log('💓 تم بدء إرسال إشارات الحضور');
 }
 
 // معالجة حالة الاتصال
@@ -601,22 +701,25 @@ const wasOnline = isOnline;
 isOnline = navigator.onLine;
 
 if (!wasOnline && isOnline) {
-// عاد الاتصال - تحقق من التحديثات
+console.log('🌐 تم استعادة الاتصال');
 checkForUpdates();
-showSyncNotification('تم استعادة الاتصال - جاري التحقق من التحديثات');
+showSyncNotification('🌐 تم استعادة الاتصال', 'success');
 } else if (wasOnline && !isOnline) {
-showSyncNotification('انقطع الاتصال - العمل في وضع عدم الاتصال', 'warning');
+console.log('📴 انقطع الاتصال');
+showSyncNotification('📴 انقطع الاتصال - العمل في وضع عدم الاتصال', 'warning');
 }
 }
 
 // بدء فترة التزامن
 function startSyncInterval() {
-// التحقق من التحديثات كل 10 ثوان
+// التحقق من التحديثات كل 3 ثوان
 syncInterval = setInterval(() => {
 if (isOnline) {
 checkForUpdates();
 }
-}, 10000);
+}, 3000);
+
+console.log('⏰ تم بدء التحقق الدوري كل 3 ثوان');
 }
 
 // التحقق من التحديثات
@@ -628,23 +731,23 @@ const lastSyncTimeStored = localStorage.getItem('last_sync_time');
 if (lastSyncMessage && lastSyncTimeStored) {
 const storedTime = parseInt(lastSyncTimeStored);
 if (storedTime > lastSyncTime) {
+console.log('🔍 وجدت تحديث جديد');
 const message = JSON.parse(lastSyncMessage);
 handleSyncMessage({ data: message });
 }
 }
 } catch (e) {
-console.warn('خطأ في التحقق من التحديثات:', e);
+console.warn('❌ خطأ في التحقق من التحديثات:', e);
 }
 }
 
 // تحديث عدد المستخدمين النشطين
-let activeUsers = new Map();
 function updateActiveUsers(presence) {
 activeUsers.set(presence.deviceId, presence);
-// إزالة المستخدمين القدامى (أكثر من دقيقتين)
+// إزالة المستخدمين القدامى (أكثر من دقيقة)
 const now = Date.now();
 for (const [deviceId, user] of activeUsers.entries()) {
-if (now - user.timestamp > 120000) {
+if (now - user.timestamp > 60000) {
 activeUsers.delete(deviceId);
 }
 }
@@ -681,18 +784,26 @@ const notification = document.createElement('div');
 let bgColor = 'bg-blue-500';
 let icon = '🔄';
 
-if (type === 'warning') {
+switch(type) {
+case 'warning':
 bgColor = 'bg-yellow-500';
 icon = '⚠️';
-} else if (type === 'success') {
+break;
+case 'success':
 bgColor = 'bg-green-500';
 icon = '✅';
-} else if (type === 'sync') {
+break;
+case 'sync':
 bgColor = 'bg-purple-500';
 icon = '🔄';
+break;
+case 'info':
+bgColor = 'bg-blue-500';
+icon = 'ℹ️';
+break;
 }
 
-notification.className = `fixed bottom-4 right-4 ${bgColor} text-white px-4 py-2 rounded-lg shadow-lg text-sm flex items-center space-x-2 space-x-reverse z-50 animate-pulse`;
+notification.className = `fixed bottom-4 right-4 ${bgColor} text-white px-4 py-2 rounded-lg shadow-lg text-sm flex items-center space-x-2 space-x-reverse z-50`;
 notification.innerHTML = `
 <span>${icon}</span>
 <span>${message}</span>
@@ -715,9 +826,14 @@ syncChannel.close();
 if (syncInterval) {
 clearInterval(syncInterval);
 }
+if (heartbeatInterval) {
+clearInterval(heartbeatInterval);
+}
 window.removeEventListener('storage', handleStorageChange);
 window.removeEventListener('online', handleOnlineStatus);
 window.removeEventListener('offline', handleOnlineStatus);
+
+console.log('🛑 تم إيقاف نظام التزامن');
 }
 
 // وظيفة لتصدير البيانات كرابط للمشاركة
@@ -812,6 +928,8 @@ return dates;
 
 // تهيئة التطبيق
 function initApp() {
+console.log('🚀 بدء تهيئة التطبيق...');
+
 // تحميل البيانات من رابط المشاركة إن وجد
 const dataLoaded = loadFromShareableLink();
 
@@ -821,13 +939,17 @@ updateFooter();
 loadUnits();
 
 // تفعيل نظام التزامن المتقدم
+setTimeout(() => {
 initSyncSystem();
+}, 500);
 // عرض رسالة ترحيب إذا تم تحميل البيانات من رابط
 if (dataLoaded) {
 setTimeout(() => {
 showNotification('تم تحميل آخر التحديثات من الرابط!', 'success');
 }, 1000);
 }
+
+console.log('✅ تم تهيئة التطبيق بنجاح');
 }
 
 // إعداد مستمعي الأحداث
@@ -1725,7 +1847,7 @@ content.innerHTML = `
 <option value="صلالة الغربية">صلالة الغربية</option>
 <option value="عوقد">عوقد</option>
 <option value="السعادة">السعادة</option>
-<option value="صحنوت">صحلنوت</option>
+<option value="صحنوت">صحنوت</option>
 <option value="ريسوت">ريسوت</option>
 </select>
 </div>
@@ -1846,7 +1968,7 @@ content.innerHTML = `
 <option value="صلالة الغربية" ${unit.location === 'صلالة الغربية' ? 'selected' : ''}>صلالة الغربية</option>
 <option value="عوقد" ${unit.location === 'عوقد' ? 'selected' : ''}>عوقد</option>
 <option value="السعادة" ${unit.location === 'السعادة' ? 'selected' : ''}>السعادة</option>
-<option value="صحلنوت" ${unit.location === 'صحلنوت' ? 'selected' : ''}>صحلنوت</option>
+<option value="صحنوت" ${unit.location === 'صحنوت' ? 'selected' : ''}>صحنوت</option>
 <option value="ريسوت" ${unit.location === 'ريسوت' ? 'selected' : ''}>ريسوت</option>
 </select>
 </div>
