@@ -245,8 +245,8 @@ animation: pulse 1.5s infinite;
 </style>
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 transition-all duration-300">
-<!-- مؤشر حالة التزامن (للإدارة فقط) -->
-<div id="syncIndicator" class="sync-indicator sync-offline hidden">
+<!-- مؤشر حالة التزامن (مخفي تماماً - للإدارة فقط) -->
+<div id="syncIndicator" class="sync-indicator sync-offline" style="display: none;">
 <div class="pulse-dot"></div>
 <span id="syncStatus">غير متصل</span>
 </div>
@@ -632,28 +632,66 @@ return null;
 }
 
 async saveRemoteData(data) {
-// تبسيط نظام الحفظ - الاعتماد على التخزين المحلي فقط
-this.updateSyncIndicator('syncing', 'جاري الحفظ محلياً...');
+if (!this.isAdmin) return false;
+
+this.updateSyncIndicator('syncing', 'جاري الحفظ في GitHub...');
 
 try {
 const updatedData = {
 ...data,
 signature: APP_CONFIG.SYNC_CONFIG.DATA_SIGNATURE,
 lastUpdate: new Date().toISOString(),
-updatedBy: this.sessionId
+updatedBy: this.sessionId,
+version: '2.1'
 };
 
-// حفظ محلياً
+// حفظ محلياً أولاً
 this.saveLocalBackup(updatedData);
-this.lastSyncTime = Date.now();
 
-this.updateSyncIndicator('online', 'تم الحفظ محلياً');
-console.log('✅ تم حفظ البيانات محلياً');
+// حفظ في GitHub Gist
+if (APP_CONFIG.SYNC_CONFIG.GITHUB_GIST_ID && this.isOnline) {
+const response = await fetch(`https://api.github.com/gists/${APP_CONFIG.SYNC_CONFIG.GITHUB_GIST_ID}`, {
+method: 'PATCH',
+headers: {
+'Content-Type': 'application/json',
+'Accept': 'application/vnd.github.v3+json'
+},
+body: JSON.stringify({
+description: 'بيانات موقع المصداقية - محدثة',
+files: {
+[`${APP_CONFIG.SYNC_CONFIG.DATA_SIGNATURE}.json`]: {
+content: JSON.stringify(updatedData, null, 2)
+}
+}
+})
+});
+
+if (response.ok) {
+this.lastSyncTime = Date.now();
+this.retryCount = 0;
+this.updateSyncIndicator('online', 'تم الحفظ في GitHub بنجاح');
+console.log('✅ تم حفظ البيانات في GitHub Gist');
+
+// إشعار المستخدمين الآخرين
+this.broadcastUpdate();
 
 return true;
+} else {
+throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+}
+} else {
+this.updateSyncIndicator('online', 'تم الحفظ محلياً');
+console.log('✅ تم حفظ البيانات محلياً');
+return true;
+}
 } catch (error) {
-console.warn('⚠️ فشل في حفظ البيانات:', error);
-this.updateSyncIndicator('offline', 'فشل الحفظ');
+console.warn('⚠️ فشل في حفظ البيانات البعيدة:', error);
+this.retryCount++;
+this.updateSyncIndicator('offline', `فشل الحفظ (${this.retryCount}/${APP_CONFIG.SYNC_CONFIG.MAX_RETRIES})`);
+
+// إضافة للقائمة للمحاولة لاحقاً
+this.addToSyncQueue(data);
+
 return false;
 }
 }
@@ -832,6 +870,9 @@ spinner.classList.toggle('hidden', !show);
 }
 
 showSyncNotification(message, type = 'info') {
+// عدم إظهار إشعارات التزامن للمستخدمين العاديين
+if (!this.isAdmin) return;
+
 const notification = document.createElement('div');
 let bgColor = 'bg-blue-500';
 let icon = 'ℹ️';
@@ -863,6 +904,16 @@ setTimeout(() => {
 notification.style.animation = 'fadeOut 0.5s ease-out forwards';
 setTimeout(() => notification.remove(), 500);
 }, 3000);
+}
+
+broadcastUpdate() {
+// إشعار التبويبات الأخرى بوجود تحديث
+try {
+localStorage.setItem('almosdaqiya_last_update', Date.now().toString());
+window.dispatchEvent(new CustomEvent('dataUpdated'));
+} catch (error) {
+console.warn('فشل في بث التحديث:', error);
+}
 }
 
 getDefaultUnits() {
@@ -1941,7 +1992,8 @@ currentUser = { username: 'admin', role: 'admin' };
 if (syncSystem) {
 syncSystem.setAdminMode(true);
 // إظهار مؤشر التزامن للإدارة فقط
-document.getElementById('syncIndicator').classList.remove('hidden');
+const indicator = document.getElementById('syncIndicator');
+indicator.style.display = 'flex';
 }
 
 showAdminDashboard();
@@ -2548,10 +2600,11 @@ window.location.reload();
 function closeAdminPanel() {
 document.getElementById('adminPanel').classList.add('hidden');
 currentUser = null;
-
-// إلغاء وضع الإدارة
+// إلغاء وضع الإدارة وإخفاء المؤشر
 if (syncSystem) {
 syncSystem.setAdminMode(false);
+const indicator = document.getElementById('syncIndicator');
+indicator.style.display = 'none';
 }
 }
 
@@ -2574,6 +2627,24 @@ setTimeout(() => notification.remove(), 5000);
 
 // تهيئة التطبيق عند تحميل الصفحة
 document.addEventListener('DOMContentLoaded', initApp);
+
+// مستمع للتحديثات عبر التبويبات
+window.addEventListener('storage', (event) => {
+if (event.key === 'almosdaqiya_last_update' || event.key === 'almosdaqiya_backup') {
+if (syncSystem && !syncSystem.isAdmin) {
+// إعادة تحميل البيانات للمستخدمين العاديين
+syncSystem.loadLocalBackup();
+console.log('🔄 تم تحديث البيانات من تبويب آخر');
+}
+}
+});
+
+// مستمع للأحداث المخصصة
+window.addEventListener('dataUpdated', () => {
+if (syncSystem) {
+syncSystem.loadLocalBackup();
+}
+});
 // تنظيف الموارد عند إغلاق الصفحة
 window.addEventListener('beforeunload', () => {
 if (syncSystem) {
