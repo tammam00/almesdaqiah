@@ -245,8 +245,8 @@ animation: pulse 1.5s infinite;
 </style>
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 transition-all duration-300">
-<!-- مؤشر حالة التزامن -->
-<div id="syncIndicator" class="sync-indicator sync-offline">
+<!-- مؤشر حالة التزامن (للإدارة فقط) -->
+<div id="syncIndicator" class="sync-indicator sync-offline hidden">
 <div class="pulse-dot"></div>
 <span id="syncStatus">غير متصل</span>
 </div>
@@ -632,11 +632,10 @@ return null;
 }
 
 async saveRemoteData(data) {
-if (!APP_CONFIG.SYNC_CONFIG.GITHUB_GIST_ID || !this.isAdmin) return false;
+// تبسيط نظام الحفظ - الاعتماد على التخزين المحلي فقط
+this.updateSyncIndicator('syncing', 'جاري الحفظ محلياً...');
 
 try {
-this.updateSyncIndicator('syncing', 'جاري الحفظ...');
-
 const updatedData = {
 ...data,
 signature: APP_CONFIG.SYNC_CONFIG.DATA_SIGNATURE,
@@ -644,41 +643,17 @@ lastUpdate: new Date().toISOString(),
 updatedBy: this.sessionId
 };
 
-const response = await fetch(`https://api.github.com/gists/${APP_CONFIG.SYNC_CONFIG.GITHUB_GIST_ID}`, {
-method: 'PATCH',
-headers: {
-'Content-Type': 'application/json'
-},
-body: JSON.stringify({
-files: {
-[`${APP_CONFIG.SYNC_CONFIG.DATA_SIGNATURE}.json`]: {
-content: JSON.stringify(updatedData, null, 2)
-}
-}
-})
-});
-
-if (response.ok) {
-this.lastSyncTime = Date.now();
-this.retryCount = 0;
-this.updateSyncIndicator('online', 'تم الحفظ بنجاح');
-console.log('✅ تم حفظ البيانات في الخادم المركزي');
-
-// حفظ نسخة احتياطية محلية
+// حفظ محلياً
 this.saveLocalBackup(updatedData);
+this.lastSyncTime = Date.now();
+
+this.updateSyncIndicator('online', 'تم الحفظ محلياً');
+console.log('✅ تم حفظ البيانات محلياً');
 
 return true;
-} else {
-throw new Error(`HTTP ${response.status}`);
-}
 } catch (error) {
-console.warn('⚠️ فشل في حفظ البيانات البعيدة:', error);
-this.retryCount++;
-this.updateSyncIndicator('offline', `فشل الحفظ (${this.retryCount}/${APP_CONFIG.SYNC_CONFIG.MAX_RETRIES})`);
-
-// حفظ في قائمة الانتظار للمحاولة لاحقاً
-this.addToSyncQueue(data);
-
+console.warn('⚠️ فشل في حفظ البيانات:', error);
+this.updateSyncIndicator('offline', 'فشل الحفظ');
 return false;
 }
 }
@@ -1965,6 +1940,8 @@ currentUser = { username: 'admin', role: 'admin' };
 // تفعيل وضع الإدارة في نظام التزامن
 if (syncSystem) {
 syncSystem.setAdminMode(true);
+// إظهار مؤشر التزامن للإدارة فقط
+document.getElementById('syncIndicator').classList.remove('hidden');
 }
 
 showAdminDashboard();
