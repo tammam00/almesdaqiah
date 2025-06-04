@@ -520,10 +520,25 @@ console.log('💾 جاري حفظ البيانات في GitHub Repository...');
 // 1️⃣ الحصول على SHA الحالي للملف (مطلوب للتحديث)
 console.log('🔍 جاري البحث عن SHA الملف الحالي...');
 const sha = await this.getFileSHA(token);
-if (!sha) {
-throw new Error('فشل في الحصول على SHA الملف');
+
+// إعداد طلب التحديث
+const requestBody = {
+message: `تحديث البيانات - ${new Date().toLocaleString('ar-SA')}`,
+content: '',
+branch: this.branch,
+committer: {
+name: 'AlMosdaqiya Admin',
+email: 'admin@almosdaqiya.local'
 }
+};
+
+// إضافة SHA فقط إذا كان الملف موجوداً
+if (sha && sha !== 'CREATE_NEW_FILE') {
+requestBody.sha = sha;
 console.log('✅ تم العثور على SHA:', sha.substring(0, 8) + '...');
+} else {
+console.log('📄 سيتم إنشاء ملف جديد');
+}
 
 // 2️⃣ إعداد البيانات المحدثة
 const updatedData = {
@@ -547,6 +562,10 @@ const base64Content = btoa(unescape(encodeURIComponent(jsonContent)));
 
 // 5️⃣ إرسال التحديث إلى GitHub
 console.log('📤 جاري رفع التحديث إلى GitHub...');
+
+// إعداد البيانات النهائية للإرسال
+requestBody.content = base64Content;
+
 const response = await fetch(`${this.baseUrl}/contents/${this.dataFile}`, {
 method: 'PUT',
 headers: {
@@ -555,16 +574,7 @@ headers: {
 'Content-Type': 'application/json',
 'User-Agent': 'AlMosdaqiya-Rental-App/1.0'
 },
-body: JSON.stringify({
-message: `تحديث البيانات - ${new Date().toLocaleString('ar-SA')}`,
-content: base64Content,
-sha: sha,
-branch: this.branch,
-committer: {
-name: 'AlMosdaqiya Admin',
-email: 'admin@almosdaqiya.local'
-}
-})
+body: JSON.stringify(requestBody)
 });
 
 if (response.ok) {
@@ -603,7 +613,7 @@ const fileData = await response.json();
 return fileData.sha;
 } else if (response.status === 404) {
 console.log('📄 الملف غير موجود، سيتم إنشاؤه جديد');
-return null; // الملف غير موجود
+return 'CREATE_NEW_FILE'; // علامة خاصة لإنشاء ملف جديد
 } else {
 console.warn('⚠️ خطأ في جلب معلومات الملف:', response.status, response.statusText);
 return null;
