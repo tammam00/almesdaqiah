@@ -1,0 +1,1568 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>المصداقية لتأجير الوحدات السكنية</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.css">
+<script src="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+theme: {
+extend: {
+fontFamily: {
+'cairo': ['Cairo', 'sans-serif'],
+},
+colors: {
+'oman-blue': '#003f7f',
+'oman-light': '#4a90e2',
+'accent': '#22c55e',
+'warning': '#f59e0b',
+}
+}
+}
+}
+</script>
+<style>
+* {
+font-family: 'Cairo', sans-serif;
+}
+
+.glass-effect {
+background: rgba(255, 255, 255, 0.1);
+backdrop-filter: blur(10px);
+border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass-effect {
+background: rgba(0, 0, 0, 0.2);
+border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gradient-bg {
+background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.dark .gradient-bg {
+background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+}
+
+.neumorphic {
+background: #f7fafc;
+box-shadow: 20px 20px 60px #d1d9e6, -20px -20px 60px #ffffff;
+}
+
+.dark .neumorphic {
+background: #2d3748;
+box-shadow: 20px 20px 60px #1a202c, -20px -20px 60px #4a5568;
+}
+
+.swiper-pagination-bullet {
+background: #4a90e2;
+}
+
+.available-day {
+background: linear-gradient(45deg, #22c55e, #16a34a);
+color: white;
+}
+
+.booked-day {
+background: linear-gradient(45deg, #ef4444, #dc2626);
+color: white;
+}
+
+.selected-day {
+background: linear-gradient(45deg, #4a90e2, #3b82f6);
+color: white;
+border: 2px solid #1d4ed8;
+}
+
+.fade-in {
+animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+from { opacity: 0; transform: translateY(20px); }
+to { opacity: 1; transform: translateY(0); }
+}
+
+.slide-in {
+animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+from { transform: translateX(-100%); }
+to { transform: translateX(0); }
+}
+
+/* إصلاح مشكلة التمرير في النوافذ المنبثقة */
+.modal-container {
+overflow-y: auto;
+max-height: 100vh;
+}
+
+.modal-content {
+margin: 1rem;
+max-height: calc(100vh - 2rem);
+overflow-y: auto;
+}
+
+/* إصلاح مشكلة ألوان النصوص */
+.text-adaptive {
+color: #374151; /* default gray-700 */
+}
+
+.dark .text-adaptive {
+color: #f3f4f6; /* dark mode gray-100 */
+}
+
+.text-adaptive-secondary {
+color: #6b7280; /* default gray-500 */
+}
+
+.dark .text-adaptive-secondary {
+color: #d1d5db; /* dark mode gray-300 */
+}
+</style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 transition-all duration-300">
+<!-- Header -->
+<header class="bg-white dark:bg-gray-800 shadow-lg transition-all duration-300">
+<div class="container mx-auto px-4 py-4">
+<div class="flex justify-between items-center">
+<div class="flex items-center space-x-4 space-x-reverse">
+<div class="w-12 h-12 bg-gradient-to-br from-oman-blue to-oman-light rounded-lg flex items-center justify-center">
+<span class="text-white font-bold text-xl">م</span>
+</div>
+<div>
+<h1 class="text-2xl font-bold text-oman-blue dark:text-oman-light">المصداقية</h1>
+<p class="text-sm text-adaptive-secondary">لتأجير الوحدات السكنية</p>
+</div>
+</div>
+
+<div class="flex items-center space-x-4 space-x-reverse">
+<button onclick="toggleDarkMode()" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all duration-300">
+<span id="theme-icon" class="text-xl">🌙</span>
+</button>
+<button onclick="showAdminLogin()" class="px-4 py-2 bg-oman-blue hover:bg-oman-light text-white rounded-lg transition-all duration-300">
+لوحة الإدارة
+</button>
+</div>
+</div>
+</div>
+</header>
+
+<!-- Main Content -->
+<main id="main-content" class="container mx-auto px-4 py-8">
+<!-- Filters Section -->
+<div class="neumorphic rounded-2xl p-6 mb-8 fade-in">
+<h2 class="text-xl font-bold text-adaptive mb-4">البحث والفلترة</h2>
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">النوع</label>
+<select id="typeFilter" class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+<option value="">جميع الأنواع</option>
+<option value="شقة">شقق</option>
+<option value="غرفة">غرف</option>
+<option value="فيلا">فلل</option>
+<option value="بيت">بيوت</option>
+</select>
+</div>
+
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">السعر (ريال عماني)</label>
+<select id="priceFilter" class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+<option value="">جميع الأسعار</option>
+<option value="0-30">أقل من 30</option>
+<option value="30-60">30 - 60</option>
+<option value="60-90">60 - 90</option>
+<option value="90+">90 وأكثر</option>
+</select>
+</div>
+
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">الموقع</label>
+<select id="locationFilter" class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+<option value="">جميع المواقع</option>
+<option value="صلالة الجديدة">صلالة الجديدة</option>
+<option value="صلالة الوسطى">صلالة الوسطى</option>
+<option value="صلالة الغربية">صلالة الغربية</option>
+<option value="عوقد">عوقد</option>
+<option value="السعادة">السعادة</option>
+<option value="صحنوت">صحنوت</option>
+<option value="ريسوت">ريسوت</option>
+</select>
+</div>
+
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">البحث</label>
+<input id="searchInput" type="text" placeholder="اسم الوحدة أو الوصف..." class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+</div>
+</div>
+
+<!-- Units Grid -->
+<div id="unitsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+<!-- Units will be loaded here -->
+</div>
+</main>
+
+<!-- Admin Panel -->
+<div id="adminPanel" class="hidden fixed inset-0 z-50 bg-gray-900 bg-opacity-75">
+<div class="modal-container">
+<div class="modal-content bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
+<!-- Admin content will be loaded here -->
+</div>
+</div>
+</div>
+
+<!-- Unit Details Modal -->
+<div id="unitModal" class="hidden fixed inset-0 z-40 bg-gray-900 bg-opacity-75">
+<div class="modal-container">
+<div class="modal-content bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
+<!-- Unit details will be loaded here -->
+</div>
+</div>
+</div>
+
+<!-- Contact Modal -->
+<div id="contactModal" class="hidden fixed inset-0 z-40 bg-gray-900 bg-opacity-75">
+<div class="modal-container flex items-center justify-center">
+<div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md m-4">
+<div class="p-6">
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-xl font-bold text-adaptive">إرسال رسالة</h3>
+<button onclick="closeContactModal()" class="text-adaptive-secondary hover:text-adaptive">
+<span class="text-2xl">×</span>
+</button>
+</div>
+<form id="contactForm" class="space-y-4">
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">الاسم</label>
+<input type="text" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">رقم الهاتف</label>
+<input type="tel" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">الرسالة</label>
+<textarea required rows="4" class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base"></textarea>
+</div>
+<button type="submit" class="w-full bg-accent hover:bg-green-600 text-white py-3 rounded-lg font-medium transition-all duration-300">
+إرسال الرسالة
+</button>
+</form>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Footer -->
+<footer class="bg-oman-blue dark:bg-gray-800 text-white py-8 mt-16">
+<div class="container mx-auto px-4">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+<div>
+<h3 class="text-xl font-bold mb-4" id="footer-company-name">المصداقية لتأجير الوحدات</h3>
+<p class="text-gray-300" id="footer-description">نوفر أفضل الوحدات السكنية للإيجار في صلالة وضواحيها بأسعار مناسبة وخدمة متميزة.</p>
+</div>
+<div>
+<h3 class="text-xl font-bold mb-4">التواصل</h3>
+<div class="space-y-2">
+<p id="footer-whatsapp">📱 واتساب: +968 9876 5432</p>
+<p id="footer-phone">📞 هاتف: +968 2345 6789</p>
+<p id="footer-email">✉️ البريد: info@almosdaqiya.om</p>
+<p id="footer-address">📍 العنوان: صلالة، سلطنة عمان</p>
+</div>
+</div>
+<div>
+<h3 class="text-xl font-bold mb-4">روابط سريعة</h3>
+<div class="space-y-2">
+<a href="#" class="block hover:text-oman-light transition-colors">سياسة الخصوصية</a>
+<a href="#" class="block hover:text-oman-light transition-colors">شروط الاستخدام</a>
+<a href="#" class="block hover:text-oman-light transition-colors">من نحن</a>
+</div>
+</div>
+</div>
+<div class="border-t border-gray-600 mt-8 pt-8 text-center">
+<p>&copy; 2024 المصداقية لتأجير الوحدات السكنية. جميع الحقوق محفوظة.</p>
+</div>
+</div>
+</footer>
+
+<script>
+// Database simulation with persistence
+function loadFromStorage(key, defaultValue) {
+try {
+const stored = sessionStorage.getItem(key);
+return stored ? JSON.parse(stored) : defaultValue;
+} catch (e) {
+return defaultValue;
+}
+}
+
+function saveToStorage(key, value) {
+try {
+sessionStorage.setItem(key, JSON.stringify(value));
+} catch (e) {
+console.warn('تعذر حفظ البيانات');
+}
+}
+
+let siteSettings = loadFromStorage('siteSettings', {
+phone: '+968 2345 6789',
+whatsapp: '+968 9876 5432',
+email: 'info@almosdaqiya.om',
+address: 'صلالة، سلطنة عمان',
+companyName: 'المصداقية لتأجير الوحدات السكنية',
+description: 'نوفر أفضل الوحدات السكنية للإيجار في صلالة وضواحيها بأسعار مناسبة وخدمة متميزة.'
+});
+
+let units = loadFromStorage('units', [
+{
+id: 1,
+name: "شقة الخليج الراقية",
+type: "شقة",
+location: "صلالة الجديدة",
+description: "شقة مفروشة بالكامل مع إطلالة رائعة على البحر، تحتوي على غرفتين وصالة ومطبخ مجهز",
+images: [
+"https://picsum.photos/400/300?random=1",
+"https://picsum.photos/400/300?random=2",
+"https://picsum.photos/400/300?random=3"
+],
+basePrice: 45,
+availability: generateAvailability(45),
+contact: {
+whatsapp: "+96812345678",
+phone: "+96812345678"
+}
+},
+{
+id: 2,
+name: "فيلا النخيل الفاخرة",
+type: "فيلا",
+location: "عوقد",
+description: "فيلا واسعة مع حديقة خاصة ومسبح، 4 غرف نوم وصالة كبيرة، مناسبة للعائلات الكبيرة",
+images: [
+"https://picsum.photos/400/300?random=4",
+"https://picsum.photos/400/300?random=5",
+"https://picsum.photos/400/300?random=6"
+],
+basePrice: 120,
+availability: generateAvailability(120),
+contact: {
+whatsapp: "+96812345679",
+phone: "+96812345679"
+}
+},
+{
+id: 3,
+name: "غرفة الطلاب المريحة",
+type: "غرفة",
+location: "صلالة الوسطى",
+description: "غرفة مفروشة مناسبة للطلاب مع خدمات مشتركة، قريبة من الجامعة والخدمات",
+images: [
+"https://picsum.photos/400/300?random=7",
+"https://picsum.photos/400/300?random=8"
+],
+basePrice: 25,
+availability: generateAvailability(25),
+contact: {
+whatsapp: "+96812345680",
+phone: "+96812345680"
+}
+},
+{
+id: 4,
+name: "بيت العائلة التقليدي",
+type: "بيت",
+location: "صحنوت",
+description: "بيت تقليدي مجدد بالكامل، 3 غرف وصالة مع فناء داخلي، هادئ ومناسب للعائلات",
+images: [
+"https://picsum.photos/400/300?random=9",
+"https://picsum.photos/400/300?random=10",
+"https://picsum.photos/400/300?random=11"
+],
+basePrice: 65,
+availability: generateAvailability(65),
+contact: {
+whatsapp: "+96812345681",
+phone: "+96812345681"
+}
+},
+{
+id: 5,
+name: "شقة المدينة العصرية",
+type: "شقة",
+location: "صلالة الغربية",
+description: "شقة حديثة في قلب المدينة، غرفة واحدة وصالة، مؤثثة بأثاث عصري وأجهزة حديثة",
+images: [
+"https://picsum.photos/400/300?random=12",
+"https://picsum.photos/400/300?random=13"
+],
+basePrice: 55,
+availability: generateAvailability(55),
+contact: {
+whatsapp: "+96812345682",
+phone: "+96812345682"
+}
+},
+{
+id: 6,
+name: "غرفة الشباب المودرن",
+type: "غرفة",
+location: "السعادة",
+description: "غرفة حديثة ومريحة مع خدمات مشتركة عالية الجودة، مناسبة للشباب والمهنيين",
+images: [
+"https://picsum.photos/400/300?random=14",
+"https://picsum.photos/400/300?random=15"
+],
+basePrice: 35,
+availability: generateAvailability(35),
+contact: {
+whatsapp: "+96812345683",
+phone: "+96812345683"
+}
+}
+]);
+
+let messages = loadFromStorage('messages', []);
+let currentUser = null;
+let selectedDates = [];
+let currentUnit = null;
+
+// Generate availability for next 14 days
+function generateAvailability(basePrice) {
+const availability = {};
+const today = new Date();
+
+for (let i = 0; i < 14; i++) {
+const date = new Date(today);
+date.setDate(today.getDate() + i);
+const dateStr = date.toISOString().split('T')[0];
+
+// Random availability and price variation
+const isAvailable = Math.random() > 0.3; // 70% chance available
+const priceMultiplier = 0.8 + Math.random() * 0.4; // ±20% price variation
+
+availability[dateStr] = {
+available: isAvailable,
+price: Math.round(basePrice * priceMultiplier)
+};
+}
+
+return availability;
+}
+
+// Initialize app
+function initApp() {
+loadUnits();
+setupEventListeners();
+initDarkMode();
+updateFooter();
+}
+
+// Update footer with site settings
+function updateFooter() {
+document.getElementById('footer-company-name').textContent = siteSettings.companyName;
+document.getElementById('footer-description').textContent = siteSettings.description;
+document.getElementById('footer-whatsapp').textContent = `📱 واتساب: ${siteSettings.whatsapp}`;
+document.getElementById('footer-phone').textContent = `📞 هاتف: ${siteSettings.phone}`;
+document.getElementById('footer-email').textContent = `✉️ البريد: ${siteSettings.email}`;
+document.getElementById('footer-address').textContent = `📍 العنوان: ${siteSettings.address}`;
+}
+
+// Dark mode functions
+function initDarkMode() {
+if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+document.documentElement.classList.add('dark');
+updateThemeIcon();
+}
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+if (event.matches) {
+document.documentElement.classList.add('dark');
+} else {
+document.documentElement.classList.remove('dark');
+}
+updateThemeIcon();
+});
+}
+
+function toggleDarkMode() {
+document.documentElement.classList.toggle('dark');
+updateThemeIcon();
+}
+
+function updateThemeIcon() {
+const icon = document.getElementById('theme-icon');
+const isDark = document.documentElement.classList.contains('dark');
+icon.textContent = isDark ? '☀️' : '🌙';
+}
+
+// Event listeners
+function setupEventListeners() {
+document.getElementById('typeFilter').addEventListener('change', filterUnits);
+document.getElementById('priceFilter').addEventListener('change', filterUnits);
+document.getElementById('locationFilter').addEventListener('change', filterUnits);
+document.getElementById('searchInput').addEventListener('input', filterUnits);
+
+document.getElementById('contactForm').addEventListener('submit', function(e) {
+e.preventDefault();
+submitContactForm();
+});
+}
+
+// Load and display units
+function loadUnits() {
+const grid = document.getElementById('unitsGrid');
+grid.innerHTML = '';
+
+units.forEach(unit => {
+const unitCard = createUnitCard(unit);
+grid.appendChild(unitCard);
+});
+
+// Initialize swipers after DOM is updated
+setTimeout(() => {
+units.forEach(unit => {
+new Swiper(`#swiper-${unit.id}`, {
+pagination: {
+el: `#swiper-${unit.id} .swiper-pagination`,
+clickable: true,
+},
+navigation: {
+nextEl: `#swiper-${unit.id} .swiper-button-next`,
+prevEl: `#swiper-${unit.id} .swiper-button-prev`,
+},
+loop: true,
+});
+});
+}, 100);
+}
+
+// Create unit card
+function createUnitCard(unit) {
+const card = document.createElement('div');
+card.className = 'neumorphic rounded-2xl overflow-hidden fade-in hover:shadow-2xl transition-all duration-300';
+
+const availableDates = Object.entries(unit.availability)
+.filter(([date, info]) => info.available)
+.slice(0, 7); // Show next 7 available days
+
+card.innerHTML = `
+<div class="relative">
+<div class="swiper" id="swiper-${unit.id}">
+<div class="swiper-wrapper">
+${unit.images.map(img => `
+<div class="swiper-slide">
+<img src="${img}" alt="${unit.name}" class="w-full h-48 object-cover">
+</div>
+`).join('')}
+</div>
+<div class="swiper-pagination"></div>
+<div class="swiper-button-next"></div>
+<div class="swiper-button-prev"></div>
+</div>
+<div class="absolute top-2 right-2 bg-oman-blue text-white px-2 py-1 rounded-lg text-sm font-bold">
+${unit.type}
+</div>
+</div>
+
+<div class="p-4">
+<h3 class="text-lg font-bold text-adaptive mb-2">${unit.name}</h3>
+<p class="text-sm text-adaptive-secondary mb-2">📍 ${unit.location}</p>
+<p class="text-sm text-adaptive mb-4 line-clamp-2">${unit.description}</p>
+
+<!-- Available dates mini calendar -->
+<div class="mb-4">
+<h4 class="text-sm font-medium text-adaptive-secondary mb-2">الأيام المتاحة القادمة</h4>
+<div class="grid grid-cols-7 gap-1">
+${availableDates.map(([date, info]) => {
+const dateObj = new Date(date);
+const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+const dayNumber = dateObj.getDate();
+return `
+<div class="text-center p-1 bg-accent text-white rounded text-xs">
+<div class="font-bold">${dayName}</div>
+<div>${dayNumber}</div>
+<div class="text-xs">${info.price}ر.ع</div>
+</div>
+`;
+}).join('')}
+</div>
+</div>
+
+<div class="flex justify-between items-center">
+<div class="text-lg font-bold text-oman-blue dark:text-oman-light">
+من ${unit.basePrice} ر.ع/ليلة
+</div>
+<div class="flex space-x-2 space-x-reverse">
+<button onclick="showUnitDetails(${unit.id})" class="px-3 py-1 bg-oman-blue hover:bg-oman-light text-white rounded-lg text-sm transition-all duration-300">
+التفاصيل
+</button>
+<a href="https://wa.me/${unit.contact.whatsapp}?text=${encodeURIComponent('مرحباً، أود الاستفسار عن ' + unit.name)}" target="_blank" class="px-3 py-1 bg-accent hover:bg-green-600 text-white rounded-lg text-sm transition-all duration-300 inline-block text-center">
+تواصل
+</a>
+</div>
+</div>
+</div>
+`;
+
+return card;
+}
+
+// Filter units
+function filterUnits() {
+const typeFilter = document.getElementById('typeFilter').value;
+const priceFilter = document.getElementById('priceFilter').value;
+const locationFilter = document.getElementById('locationFilter').value;
+const searchInput = document.getElementById('searchInput').value.toLowerCase();
+
+const filteredUnits = units.filter(unit => {
+// Type filter
+if (typeFilter && unit.type !== typeFilter) return false;
+
+// Price filter
+if (priceFilter) {
+const [min, max] = priceFilter.split('-').map(p => p.replace('+', ''));
+if (max) {
+if (unit.basePrice < parseInt(min) || unit.basePrice > parseInt(max)) return false;
+} else {
+if (unit.basePrice < parseInt(min)) return false;
+}
+}
+
+// Location filter
+if (locationFilter && unit.location !== locationFilter) return false;
+
+// Search filter
+if (searchInput) {
+const searchText = unit.name.toLowerCase() + ' ' + unit.description.toLowerCase();
+if (!searchText.includes(searchInput)) return false;
+}
+
+return true;
+});
+
+const grid = document.getElementById('unitsGrid');
+grid.innerHTML = '';
+
+if (filteredUnits.length === 0) {
+grid.innerHTML = `
+<div class="col-span-full text-center py-12">
+<div class="text-6xl mb-4">🏠</div>
+<h3 class="text-xl font-bold text-adaptive mb-2">لا توجد وحدات متاحة</h3>
+<p class="text-adaptive-secondary">جرب تغيير معايير البحث</p>
+</div>
+`;
+return;
+}
+
+filteredUnits.forEach(unit => {
+const unitCard = createUnitCard(unit);
+grid.appendChild(unitCard);
+});
+
+// Re-initialize swipers
+setTimeout(() => {
+filteredUnits.forEach(unit => {
+new Swiper(`#swiper-${unit.id}`, {
+pagination: {
+el: `#swiper-${unit.id} .swiper-pagination`,
+clickable: true,
+},
+navigation: {
+nextEl: `#swiper-${unit.id} .swiper-button-next`,
+prevEl: `#swiper-${unit.id} .swiper-button-prev`,
+},
+loop: true,
+});
+});
+}, 100);
+}
+
+// Show unit details modal
+function showUnitDetails(unitId) {
+const unit = units.find(u => u.id === unitId);
+currentUnit = unit;
+selectedDates = [];
+
+const modal = document.getElementById('unitModal');
+modal.querySelector('.modal-content').innerHTML = `
+<div class="p-6">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h2 class="text-2xl font-bold text-adaptive">${unit.name}</h2>
+<p class="text-adaptive-secondary">📍 ${unit.location} • ${unit.type}</p>
+</div>
+<button onclick="closeUnitModal()" class="text-adaptive-secondary hover:text-adaptive">
+<span class="text-3xl">×</span>
+</button>
+</div>
+
+<!-- Images -->
+<div class="mb-6">
+<div class="swiper" id="modal-swiper">
+<div class="swiper-wrapper">
+${unit.images.map(img => `
+<div class="swiper-slide">
+<img src="${img}" alt="${unit.name}" class="w-full h-64 md:h-96 object-cover rounded-lg">
+</div>
+`).join('')}
+</div>
+<div class="swiper-pagination"></div>
+<div class="swiper-button-next"></div>
+<div class="swiper-button-prev"></div>
+</div>
+</div>
+
+<!-- Description -->
+<div class="mb-6">
+<h3 class="text-lg font-bold text-adaptive mb-2">الوصف</h3>
+<p class="text-adaptive">${unit.description}</p>
+</div>
+
+<!-- Availability Calendar -->
+<div class="mb-6">
+<h3 class="text-lg font-bold text-adaptive mb-4">التواريخ المتاحة وأسعارها</h3>
+<div class="grid grid-cols-7 gap-2" id="calendar-${unit.id}">
+${generateCalendar(unit)}
+</div>
+<div id="selected-info" class="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg hidden">
+<h4 class="font-bold text-adaptive mb-2">التواريخ المختارة:</h4>
+<div id="selected-dates" class="text-adaptive"></div>
+<div id="total-price" class="text-xl font-bold text-oman-blue dark:text-oman-light mt-2"></div>
+<button onclick="confirmBooking()" class="mt-3 w-full bg-accent hover:bg-green-600 text-white py-2 rounded-lg font-medium transition-all duration-300">
+تأكيد الحجز
+</button>
+</div>
+</div>
+
+<!-- Contact Info -->
+<div class="border-t pt-6">
+<h3 class="text-lg font-bold text-adaptive mb-4">معلومات التواصل</h3>
+<div class="flex flex-wrap gap-4">
+<a href="https://wa.me/${unit.contact.whatsapp}" target="_blank" class="flex items-center space-x-2 space-x-reverse bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-all duration-300">
+<span>💬</span>
+<span>واتساب</span>
+</a>
+<a href="tel:${unit.contact.phone}" class="flex items-center space-x-2 space-x-reverse bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-all duration-300">
+<span>📞</span>
+<span>اتصال مباشر</span>
+</a>
+<button onclick="showContactModal(${unit.id})" class="flex items-center space-x-2 space-x-reverse bg-oman-blue hover:bg-oman-light text-white px-4 py-2 rounded-lg transition-all duration-300">
+<span>✉️</span>
+<span>إرسال رسالة</span>
+</button>
+</div>
+</div>
+</div>
+`;
+
+modal.classList.remove('hidden');
+
+// Initialize modal swiper
+setTimeout(() => {
+new Swiper('#modal-swiper', {
+pagination: {
+el: '#modal-swiper .swiper-pagination',
+clickable: true,
+},
+navigation: {
+nextEl: '#modal-swiper .swiper-button-next',
+prevEl: '#modal-swiper .swiper-button-prev',
+},
+loop: true,
+});
+}, 100);
+}
+
+// Generate calendar for unit
+function generateCalendar(unit) {
+let html = '';
+const today = new Date();
+
+// Add day headers in English (Gregorian calendar)
+const dayHeaders = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+dayHeaders.forEach(day => {
+html += `<div class="text-center font-bold text-adaptive p-2">${day}</div>`;
+});
+
+// Add padding for first week
+const firstDay = today.getDay();
+for (let i = 0; i < firstDay; i++) {
+html += `<div></div>`;
+}
+
+// Add days
+for (let i = 0; i < 14; i++) {
+const date = new Date(today);
+date.setDate(today.getDate() + i);
+const dateStr = date.toISOString().split('T')[0];
+const dayInfo = unit.availability[dateStr];
+
+if (dayInfo) {
+const cssClass = dayInfo.available ? 'available-day cursor-pointer hover:opacity-80' : 'booked-day cursor-not-allowed';
+const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+html += `
+<div onclick="${dayInfo.available ? `selectDate('${dateStr}', ${dayInfo.price})` : ''}"
+class="text-center p-2 rounded-lg ${cssClass} transition-all duration-300"
+data-date="${dateStr}">
+<div class="font-bold">${date.getDate()}</div>
+<div class="text-xs">${dayInfo.available ? dayInfo.price + 'ر.ع' : 'محجوز'}</div>
+</div>
+`;
+}
+}
+
+return html;
+}
+
+// Select date for booking
+function selectDate(dateStr, price) {
+const dateElement = document.querySelector(`[data-date="${dateStr}"]`);
+
+if (selectedDates.find(d => d.date === dateStr)) {
+// Deselect
+selectedDates = selectedDates.filter(d => d.date !== dateStr);
+dateElement.classList.remove('selected-day');
+dateElement.classList.add('available-day');
+} else {
+// Select
+selectedDates.push({ date: dateStr, price: price });
+dateElement.classList.remove('available-day');
+dateElement.classList.add('selected-day');
+}
+
+updateSelectedInfo();
+}
+
+// Update selected dates info
+function updateSelectedInfo() {
+const selectedInfo = document.getElementById('selected-info');
+const selectedDatesDiv = document.getElementById('selected-dates');
+const totalPriceDiv = document.getElementById('total-price');
+
+if (selectedDates.length === 0) {
+selectedInfo.classList.add('hidden');
+return;
+}
+
+selectedInfo.classList.remove('hidden');
+
+// Sort dates
+selectedDates.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+// Display dates in Gregorian format
+const datesText = selectedDates.map(d => {
+const date = new Date(d.date);
+return `${date.toLocaleDateString('en-US')} (${d.price} ر.ع)`;
+}).join(' • ');
+
+selectedDatesDiv.textContent = datesText;
+
+// Calculate total
+const total = selectedDates.reduce((sum, d) => sum + d.price, 0);
+totalPriceDiv.textContent = `المجموع: ${total} ر.ع لمدة ${selectedDates.length} ليلة`;
+}
+
+// Confirm booking
+function confirmBooking() {
+if (selectedDates.length === 0) return;
+
+const total = selectedDates.reduce((sum, d) => sum + d.price, 0);
+const message = `أود حجز ${currentUnit.name} للتواريخ التالية:\n${selectedDates.map(d => new Date(d.date).toLocaleDateString('en-US')).join(', ')}\nالمجموع: ${total} ر.ع`;
+
+// Open WhatsApp with pre-filled message
+const whatsappUrl = `https://wa.me/${currentUnit.contact.whatsapp}?text=${encodeURIComponent(message)}`;
+window.open(whatsappUrl, '_blank');
+
+// Show success message
+showNotification('تم إرسال طلب الحجز عبر واتساب!', 'success');
+closeUnitModal();
+}
+
+// Close unit modal
+function closeUnitModal() {
+document.getElementById('unitModal').classList.add('hidden');
+selectedDates = [];
+currentUnit = null;
+}
+
+// Show contact modal
+function showContactModal(unitId) {
+const unit = units.find(u => u.id === unitId);
+currentUnit = unit;
+document.getElementById('contactModal').classList.remove('hidden');
+}
+
+// Close contact modal
+function closeContactModal() {
+document.getElementById('contactModal').classList.add('hidden');
+document.getElementById('contactForm').reset();
+}
+
+// Submit contact form
+function submitContactForm() {
+const form = document.getElementById('contactForm');
+const formData = new FormData(form);
+
+const message = {
+id: Date.now(),
+unitId: currentUnit.id,
+unitName: currentUnit.name,
+name: formData.get('name') || form.elements[0].value,
+phone: formData.get('phone') || form.elements[1].value,
+message: formData.get('message') || form.elements[2].value,
+timestamp: new Date().toISOString()
+};
+
+messages.push(message);
+saveToStorage('messages', messages);
+
+showNotification('تم إرسال رسالتك بنجاح! سنتواصل معك قريباً.', 'success');
+closeContactModal();
+}
+
+// Admin functions
+function showAdminLogin() {
+const adminPanel = document.getElementById('adminPanel');
+adminPanel.querySelector('.modal-content').innerHTML = `
+<div class="p-8">
+<div class="text-center mb-8">
+<div class="w-16 h-16 bg-gradient-to-br from-oman-blue to-oman-light rounded-full flex items-center justify-center mx-auto mb-4">
+<span class="text-white font-bold text-2xl">🔐</span>
+</div>
+<h2 class="text-2xl font-bold text-adaptive">تسجيل دخول الإدارة</h2>
+</div>
+
+<form onsubmit="adminLogin(event)" class="space-y-6">
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">اسم المستخدم</label>
+<input type="text" value="" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">كلمة المرور</label>
+<input type="password" value="" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+<button type="submit" class="w-full bg-oman-blue hover:bg-oman-light text-white py-3 rounded-lg font-medium transition-all duration-300">
+دخول
+</button>
+<button type="button" onclick="closeAdminPanel()" class="w-full bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-lg font-medium transition-all duration-300">
+إلغاء
+</button>
+</form>
+</div>
+`;
+adminPanel.classList.remove('hidden');
+}
+
+// Admin login
+function adminLogin(event) {
+event.preventDefault();
+const form = event.target;
+const username = form.elements[0].value;
+const password = form.elements[1].value;
+
+if (username === 'AbuSalim' && password === '19802002') {
+currentUser = { username: 'admin', role: 'admin' };
+showAdminDashboard();
+} else {
+showNotification('بيانات تسجيل الدخول غير صحيحة', 'error');
+}
+}
+
+// Show admin dashboard
+function showAdminDashboard() {
+const adminPanel = document.getElementById('adminPanel');
+adminPanel.querySelector('.modal-content').innerHTML = `
+<!-- Admin Header -->
+<div class="bg-gradient-to-r from-oman-blue to-oman-light text-white p-6 rounded-t-2xl">
+<div class="flex justify-between items-center">
+<div>
+<h1 class="text-2xl font-bold">لوحة إدارة المصداقية</h1>
+<p class="text-blue-100">مرحباً بك، ${currentUser.username}</p>
+</div>
+<div class="flex space-x-4 space-x-reverse">
+<button onclick="closeAdminPanel()" class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-all duration-300">
+خروج
+</button>
+</div>
+</div>
+</div>
+
+<!-- Admin Navigation -->
+<div class="border-b dark:border-gray-700">
+<nav class="flex space-x-8 space-x-reverse px-6">
+<button onclick="showAdminTab('units')" class="admin-tab-btn active px-4 py-3 font-medium border-b-2 border-oman-blue text-oman-blue">
+إدارة الوحدات
+</button>
+<button onclick="showAdminTab('messages')" class="admin-tab-btn px-4 py-3 font-medium border-b-2 border-transparent text-adaptive-secondary hover:text-adaptive">
+الرسائل (${messages.length})
+</button>
+<button onclick="showAdminTab('settings')" class="admin-tab-btn px-4 py-3 font-medium border-b-2 border-transparent text-adaptive-secondary hover:text-adaptive">
+إعدادات الموقع
+</button>
+<button onclick="showAdminTab('analytics')" class="admin-tab-btn px-4 py-3 font-medium border-b-2 border-transparent text-adaptive-secondary hover:text-adaptive">
+الإحصائيات
+</button>
+</nav>
+</div>
+
+<!-- Admin Content -->
+<div id="admin-content" class="p-6">
+${getAdminUnitsContent()}
+</div>
+`;
+}
+
+// Show admin tab
+function showAdminTab(tab) {
+// Update tab buttons
+document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+btn.classList.remove('active', 'border-oman-blue', 'text-oman-blue');
+btn.classList.add('border-transparent', 'text-adaptive-secondary');
+});
+
+event.target.classList.add('active', 'border-oman-blue', 'text-oman-blue');
+event.target.classList.remove('border-transparent', 'text-adaptive-secondary');
+
+// Update content
+const content = document.getElementById('admin-content');
+switch(tab) {
+case 'units':
+content.innerHTML = getAdminUnitsContent();
+break;
+case 'messages':
+content.innerHTML = getAdminMessagesContent();
+break;
+case 'settings':
+content.innerHTML = getAdminSettingsContent();
+break;
+case 'analytics':
+content.innerHTML = getAdminAnalyticsContent();
+break;
+}
+}
+
+// Get admin units content
+function getAdminUnitsContent() {
+return `
+<div class="mb-6">
+<div class="flex justify-between items-center">
+<h2 class="text-xl font-bold text-adaptive">إدارة الوحدات</h2>
+<button onclick="showAddUnitForm()" class="bg-accent hover:bg-green-600 text-white px-6 py-2 rounded-lg font-medium transition-all duration-300">
++ إضافة وحدة جديدة
+</button>
+</div>
+</div>
+
+<div class="overflow-x-auto">
+<table class="w-full bg-white dark:bg-gray-700 rounded-lg shadow">
+<thead class="bg-gray-50 dark:bg-gray-800">
+<tr>
+<th class="px-6 py-3 text-right text-xs font-medium text-adaptive-secondary uppercase tracking-wider">الوحدة</th>
+<th class="px-6 py-3 text-right text-xs font-medium text-adaptive-secondary uppercase tracking-wider">النوع</th>
+<th class="px-6 py-3 text-right text-xs font-medium text-adaptive-secondary uppercase tracking-wider">الموقع</th>
+<th class="px-6 py-3 text-right text-xs font-medium text-adaptive-secondary uppercase tracking-wider">السعر الأساسي</th>
+<th class="px-6 py-3 text-right text-xs font-medium text-adaptive-secondary uppercase tracking-wider">الإجراءات</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-gray-200 dark:divide-gray-600">
+${units.map(unit => `
+<tr class="hover:bg-gray-50 dark:hover:bg-gray-600">
+<td class="px-6 py-4">
+<div class="flex items-center">
+<img src="${unit.images[0]}" alt="${unit.name}" class="w-12 h-12 rounded-lg object-cover ml-4">
+<div>
+<div class="text-sm font-medium text-adaptive">${unit.name}</div>
+</div>
+</div>
+</td>
+<td class="px-6 py-4 text-sm text-adaptive">${unit.type}</td>
+<td class="px-6 py-4 text-sm text-adaptive">${unit.location}</td>
+<td class="px-6 py-4 text-sm text-adaptive">${unit.basePrice} ر.ع</td>
+<td class="px-6 py-4 text-sm font-medium">
+<div class="flex space-x-2 space-x-reverse">
+<button onclick="editUnit(${unit.id})" class="text-oman-blue hover:text-oman-light">تعديل</button>
+<button onclick="deleteUnit(${unit.id})" class="text-red-600 hover:text-red-900">حذف</button>
+</div>
+</td>
+</tr>
+`).join('')}
+</tbody>
+</table>
+</div>
+`;
+}
+
+// Get admin messages content
+function getAdminMessagesContent() {
+return `
+<div class="mb-6">
+<h2 class="text-xl font-bold text-adaptive">الرسائل الواردة</h2>
+</div>
+
+${messages.length === 0 ? `
+<div class="text-center py-12">
+<div class="text-6xl mb-4">📬</div>
+<h3 class="text-xl font-bold text-adaptive mb-2">لا توجد رسائل</h3>
+<p class="text-adaptive-secondary">ستظهر الرسائل الجديدة هنا</p>
+</div>
+` : `
+<div class="space-y-4">
+${messages.map(message => `
+<div class="bg-white dark:bg-gray-700 rounded-lg shadow p-6">
+<div class="flex justify-between items-start mb-4">
+<div>
+<h3 class="text-lg font-bold text-adaptive">${message.name}</h3>
+<p class="text-sm text-adaptive-secondary">📞 ${message.phone}</p>
+<p class="text-sm text-adaptive-secondary">🏠 ${message.unitName}</p>
+</div>
+<div class="text-sm text-adaptive-secondary">
+${new Date(message.timestamp).toLocaleDateString('en-US')}
+</div>
+</div>
+<div class="bg-gray-50 dark:bg-gray-600 rounded-lg p-4">
+<p class="text-adaptive">${message.message}</p>
+</div>
+<div class="mt-4 flex space-x-4 space-x-reverse">
+<a href="tel:${message.phone}" class="text-oman-blue hover:text-oman-light">اتصال</a>
+<a href="https://wa.me/${message.phone}" target="_blank" class="text-green-600 hover:text-green-700">واتساب</a>
+</div>
+</div>
+`).join('')}
+</div>
+`}
+`;
+}
+
+// Get admin settings content
+function getAdminSettingsContent() {
+return `
+<div class="mb-6">
+<h2 class="text-xl font-bold text-adaptive">إعدادات الموقع</h2>
+<p class="text-adaptive-secondary">تحديث معلومات الشركة التي تظهر في أسفل الموقع</p>
+</div>
+
+<form onsubmit="saveSiteSettings(event)" class="space-y-6">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">اسم الشركة</label>
+<input type="text" value="${siteSettings.companyName}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">العنوان</label>
+<input type="text" value="${siteSettings.address}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">رقم الهاتف</label>
+<input type="tel" value="${siteSettings.phone}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">رقم واتساب</label>
+<input type="tel" value="${siteSettings.whatsapp}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+<div class="md:col-span-2">
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">البريد الإلكتروني</label>
+<input type="email" value="${siteSettings.email}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+</div>
+
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">وصف الشركة</label>
+<textarea required rows="4" class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">${siteSettings.description}</textarea>
+</div>
+
+<div class="flex space-x-4 space-x-reverse">
+<button type="submit" class="bg-oman-blue hover:bg-oman-light text-white px-6 py-3 rounded-lg font-medium transition-all duration-300">
+حفظ الإعدادات
+</button>
+<button type="button" onclick="showAdminTab('units')" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium transition-all duration-300">
+إلغاء
+</button>
+</div>
+</form>
+`;
+}
+
+// Save site settings
+function saveSiteSettings(event) {
+event.preventDefault();
+const form = event.target;
+const elements = form.elements;
+
+siteSettings = {
+companyName: elements[0].value,
+address: elements[1].value,
+phone: elements[2].value,
+whatsapp: elements[3].value,
+email: elements[4].value,
+description: elements[5].value
+};
+
+saveToStorage('siteSettings', siteSettings);
+updateFooter();
+showNotification('تم حفظ إعدادات الموقع بنجاح!', 'success');
+}
+
+// Get admin analytics content
+function getAdminAnalyticsContent() {
+const totalUnits = units.length;
+const avgPrice = Math.round(units.reduce((sum, unit) => sum + unit.basePrice, 0) / units.length);
+const typeStats = units.reduce((stats, unit) => {
+stats[unit.type] = (stats[unit.type] || 0) + 1;
+return stats;
+}, {});
+
+return `
+<div class="mb-6">
+<h2 class="text-xl font-bold text-adaptive">الإحصائيات</h2>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+<div class="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg p-6">
+<div class="text-3xl font-bold">${totalUnits}</div>
+<div class="text-blue-100">إجمالي الوحدات</div>
+</div>
+<div class="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-lg p-6">
+<div class="text-3xl font-bold">${messages.length}</div>
+<div class="text-green-100">الرسائل الواردة</div>
+</div>
+<div class="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-lg p-6">
+<div class="text-3xl font-bold">${avgPrice}</div>
+<div class="text-purple-100">متوسط السعر (ر.ع)</div>
+</div>
+<div class="bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-lg p-6">
+<div class="text-3xl font-bold">${Object.keys(typeStats).length}</div>
+<div class="text-orange-100">أنواع الوحدات</div>
+</div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+<div class="bg-white dark:bg-gray-700 rounded-lg shadow p-6">
+<h3 class="text-lg font-bold text-adaptive mb-4">توزيع أنواع الوحدات</h3>
+<div class="space-y-3">
+${Object.entries(typeStats).map(([type, count]) => `
+<div class="flex justify-between items-center">
+<span class="text-adaptive">${type}</span>
+<div class="flex items-center">
+<div class="w-24 bg-gray-200 dark:bg-gray-600 rounded-full h-2 ml-3">
+<div class="bg-oman-blue h-2 rounded-full" style="width: ${(count / totalUnits) * 100}%"></div>
+</div>
+<span class="text-sm font-medium text-adaptive-secondary">${count}</span>
+</div>
+</div>
+`).join('')}
+</div>
+</div>
+
+<div class="bg-white dark:bg-gray-700 rounded-lg shadow p-6">
+<h3 class="text-lg font-bold text-adaptive mb-4">الوحدات الأعلى سعراً</h3>
+<div class="space-y-3">
+${units.sort((a, b) => b.basePrice - a.basePrice).slice(0, 5).map(unit => `
+<div class="flex justify-between items-center">
+<span class="text-adaptive">${unit.name}</span>
+<span class="font-bold text-oman-blue dark:text-oman-light">${unit.basePrice} ر.ع</span>
+</div>
+`).join('')}
+</div>
+</div>
+</div>
+`;
+}
+
+// Show add unit form
+function showAddUnitForm() {
+const content = document.getElementById('admin-content');
+content.innerHTML = `
+<div class="mb-6">
+<div class="flex items-center space-x-4 space-x-reverse">
+<button onclick="showAdminTab('units')" class="text-adaptive-secondary hover:text-adaptive">
+← العودة
+</button>
+<h2 class="text-xl font-bold text-adaptive">إضافة وحدة جديدة</h2>
+</div>
+</div>
+
+<form onsubmit="saveUnit(event)" class="space-y-6">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">اسم الوحدة</label>
+<input type="text" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">النوع</label>
+<select required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+<option value="">اختر النوع</option>
+<option value="شقة">شقة</option>
+<option value="غرفة">غرفة</option>
+<option value="فيلا">فيلا</option>
+<option value="بيت">بيت</option>
+</select>
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">الموقع</label>
+<select required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+<option value="">اختر الموقع</option>
+<option value="صلالة الجديدة">صلالة الجديدة</option>
+<option value="صلالة الوسطى">صلالة الوسطى</option>
+<option value="صلالة الغربية">صلالة الغربية</option>
+<option value="عوقد">عوقد</option>
+<option value="السعادة">السعادة</option>
+<option value="صحنوت">صحنوت</option>
+<option value="ريسوت">ريسوت</option>
+</select>
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">السعر الأساسي (ر.ع)</label>
+<input type="number" min="1" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+</div>
+
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">الوصف</label>
+<textarea required rows="4" class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base"></textarea>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">رقم واتساب</label>
+<input type="tel" placeholder="+968xxxxxxxx" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">رقم الهاتف</label>
+<input type="tel" placeholder="+968xxxxxxxx" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+</div>
+
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">روابط الصور (كل رابط في سطر منفصل - حتى 23 صورة)</label>
+<textarea rows="6" placeholder="https://picsum.photos/400/300?random=1&#10;https://picsum.photos/400/300?random=2&#10;..." class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base"></textarea>
+<p class="text-sm text-adaptive-secondary mt-1">اتركه فارغاً لاستخدام صور تلقائية</p>
+</div>
+
+<div class="flex space-x-4 space-x-reverse">
+<button type="submit" class="bg-accent hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-all duration-300">
+حفظ الوحدة
+</button>
+<button type="button" onclick="showAdminTab('units')" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium transition-all duration-300">
+إلغاء
+</button>
+</div>
+</form>
+`;
+}
+
+// Save unit
+function saveUnit(event) {
+event.preventDefault();
+const form = event.target;
+const elements = form.elements;
+
+// Get image URLs
+let images = [];
+const imageUrls = elements[6].value.trim();
+if (imageUrls) {
+images = imageUrls.split('\n').filter(url => url.trim()).slice(0, 23);
+} else {
+// Generate random images
+const numImages = Math.floor(Math.random() * 3) + 2; // 2-4 images
+for (let i = 0; i < numImages; i++) {
+images.push(`https://picsum.photos/400/300?random=${Date.now()}-${i}`);
+}
+}
+
+const newUnit = {
+id: Date.now(),
+name: elements[0].value,
+type: elements[1].value,
+location: elements[2].value,
+basePrice: parseInt(elements[3].value),
+description: elements[4].value,
+contact: {
+whatsapp: elements[5].value,
+phone: elements[7].value
+},
+images: images,
+availability: generateAvailability(parseInt(elements[3].value))
+};
+
+units.push(newUnit);
+saveToStorage('units', units);
+showNotification('تم إضافة الوحدة بنجاح!', 'success');
+showAdminTab('units');
+
+// Refresh main page units
+loadUnits();
+}
+
+// Edit unit
+function editUnit(unitId) {
+const unit = units.find(u => u.id === unitId);
+const content = document.getElementById('admin-content');
+
+content.innerHTML = `
+<div class="mb-6">
+<div class="flex items-center space-x-4 space-x-reverse">
+<button onclick="showAdminTab('units')" class="text-adaptive-secondary hover:text-adaptive">
+← العودة
+</button>
+<h2 class="text-xl font-bold text-adaptive">تعديل الوحدة</h2>
+</div>
+</div>
+
+<form onsubmit="updateUnit(event, ${unitId})" class="space-y-6">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">اسم الوحدة</label>
+<input type="text" value="${unit.name}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">النوع</label>
+<select required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+<option value="شقة" ${unit.type === 'شقة' ? 'selected' : ''}>شقة</option>
+<option value="غرفة" ${unit.type === 'غرفة' ? 'selected' : ''}>غرفة</option>
+<option value="فيلا" ${unit.type === 'فيلا' ? 'selected' : ''}>فيلا</option>
+<option value="بيت" ${unit.type === 'بيت' ? 'selected' : ''}>بيت</option>
+</select>
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">الموقع</label>
+<select required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+<option value="صلالة الجديدة" ${unit.location === 'صلالة الجديدة' ? 'selected' : ''}>صلالة الجديدة</option>
+<option value="صلالة الوسطى" ${unit.location === 'صلالة الوسطى' ? 'selected' : ''}>صلالة الوسطى</option>
+<option value="صلالة الغربية" ${unit.location === 'صلالة الغربية' ? 'selected' : ''}>صلالة الغربية</option>
+<option value="عوقد" ${unit.location === 'عوقد' ? 'selected' : ''}>عوقد</option>
+<option value="السعادة" ${unit.location === 'السعادة' ? 'selected' : ''}>السعادة</option>
+<option value="صحنوت" ${unit.location === 'صحنوت' ? 'selected' : ''}>صحنوت</option>
+<option value="ريسوت" ${unit.location === 'ريسوت' ? 'selected' : ''}>ريسوت</option>
+</select>
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">السعر الأساسي (ر.ع)</label>
+<input type="number" value="${unit.basePrice}" min="1" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+</div>
+
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">الوصف</label>
+<textarea required rows="4" class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">${unit.description}</textarea>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">رقم واتساب</label>
+<input type="tel" value="${unit.contact.whatsapp}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">رقم الهاتف</label>
+<input type="tel" value="${unit.contact.phone}" required class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">
+</div>
+</div>
+
+<div>
+<label class="block text-sm font-medium text-adaptive-secondary mb-2">روابط الصور (كل رابط في سطر منفصل)</label>
+<textarea rows="6" class="w-full p-3 border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 text-adaptive text-base">${unit.images.join('\n')}</textarea>
+</div>
+
+<div class="flex space-x-4 space-x-reverse">
+<button type="submit" class="bg-oman-blue hover:bg-oman-light text-white px-6 py-3 rounded-lg font-medium transition-all duration-300">
+تحديث الوحدة
+</button>
+<button type="button" onclick="showAdminTab('units')" class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium transition-all duration-300">
+إلغاء
+</button>
+</div>
+</form>
+`;
+}
+
+// Update unit
+function updateUnit(event, unitId) {
+event.preventDefault();
+const form = event.target;
+const elements = form.elements;
+
+const unitIndex = units.findIndex(u => u.id === unitId);
+const images = elements[6].value.trim().split('\n').filter(url => url.trim());
+
+units[unitIndex] = {
+...units[unitIndex],
+name: elements[0].value,
+type: elements[1].value,
+location: elements[2].value,
+basePrice: parseInt(elements[3].value),
+description: elements[4].value,
+contact: {
+whatsapp: elements[5].value,
+phone: elements[7].value
+},
+images: images,
+availability: generateAvailability(parseInt(elements[3].value))
+};
+
+saveToStorage('units', units);
+showNotification('تم تحديث الوحدة بنجاح!', 'success');
+showAdminTab('units');
+
+// Refresh main page units
+loadUnits();
+}
+
+// Delete unit
+function deleteUnit(unitId) {
+if (confirm('هل أنت متأكد من حذف هذه الوحدة؟')) {
+units = units.filter(u => u.id !== unitId);
+saveToStorage('units', units);
+showNotification('تم حذف الوحدة بنجاح!', 'success');
+showAdminTab('units');
+
+// Refresh main page units
+loadUnits();
+}
+}
+
+// Close admin panel
+function closeAdminPanel() {
+document.getElementById('adminPanel').classList.add('hidden');
+currentUser = null;
+}
+
+// Show notification
+function showNotification(message, type = 'info') {
+const notification = document.createElement('div');
+notification.className = `fixed top-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 p-4 rounded-lg shadow-lg transition-all duration-300 transform translate-y-0`;
+
+const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+notification.className += ` ${bgColor} text-white`;
+
+notification.innerHTML = `
+<div class="flex justify-between items-center">
+<span>${message}</span>
+<button onclick="this.parentElement.parentElement.remove()" class="text-white hover:text-gray-200">
+<span class="text-xl">×</span>
+</button>
+</div>
+`;
+
+document.body.appendChild(notification);
+
+// Auto remove after 5 seconds
+setTimeout(() => {
+if (notification.parentNode) {
+notification.remove();
+}
+}, 5000);
+}
+
+// Initialize app when page loads
+document.addEventListener('DOMContentLoaded', initApp);
+</script>
+</body>
+</html>
