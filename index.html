@@ -206,7 +206,7 @@ background-color: #374151;
 </div>
 <div>
 <h1 class="text-2xl font-bold text-oman-blue dark:text-oman-light">المصداقية</h1>
-<p class="text-sm text-adaptive-secondary">لتأجير الوحدات السكنية</p>
+<p class="text-sm text-adaptive-secondary">للعقارات</p>
 </div>
 </div>
 
@@ -259,7 +259,7 @@ background-color: #374151;
 <option value="صلالة الغربية">صلالة الغربية</option>
 <option value="عوقد">عوقد</option>
 <option value="السعادة">السعادة</option>
-<option value="صحنوت">صحنوت</option>
+<option value="صحنوت">صحلنوت</option>
 <option value="ريسوت">ريسوت</option>
 </select>
 </div>
@@ -445,25 +445,279 @@ console.warn('فشل في حفظ البيانات في كلا المخازن:', 
 }
 }
 
-// وظيفة لمزامنة البيانات بين النوافذ/التبويبات
-function syncDataAcrossTabs() {
-window.addEventListener('storage', function(e) {
-if (e.storageArea === localStorage) {
+// نظام التزامن المتقدم بين جميع المستخدمين
+let syncChannel = null;
+let lastSyncTime = Date.now();
+let syncInterval = null;
+let isOnline = navigator.onLine;
+
+// إنشاء قناة البث للتزامن
+function initSyncSystem() {
+try {
+// استخدام BroadcastChannel للتزامن بين التبويبات
+syncChannel = new BroadcastChannel('almosdaqiya-sync');
+syncChannel.addEventListener('message', handleSyncMessage);
+} catch (e) {
+console.warn('BroadcastChannel غير مدعوم، استخدام localStorage فقط');
+}
+
+// مراقبة التغييرات في localStorage
+window.addEventListener('storage', handleStorageChange);
+
+// مراقبة حالة الاتصال
+window.addEventListener('online', handleOnlineStatus);
+window.addEventListener('offline', handleOnlineStatus);
+
+// التحقق الدوري من التحديثات
+startSyncInterval();
+
+// إرسال إشارة الحضور
+broadcastPresence();
+}
+
+// معالجة رسائل التزامن
+function handleSyncMessage(event) {
+const { type, data, timestamp, source } = event.data;
+
+// تجاهل الرسائل من نفس المصدر
+if (source === getDeviceId()) return;
+
+// التحقق من أن الرسالة أحدث من آخر تزامن
+if (timestamp <= lastSyncTime) return;
+
+switch (type) {
+case 'units_updated':
+units = data;
+loadUnits();
+showSyncNotification('تم تحديث الوحدات');
+break;
+case 'settings_updated':
+siteSettings = data;
+updateFooter();
+showSyncNotification('تم تحديث إعدادات الموقع');
+break;
+case 'message_added':
+messages = data;
+showSyncNotification('رسالة جديدة');
+break;
+case 'presence':
+updateActiveUsers(data);
+break;
+}
+
+lastSyncTime = timestamp;
+}
+
+// معالجة تغييرات localStorage
+function handleStorageChange(e) {
+if (e.storageArea !== localStorage) return;
+
+const timestamp = Date.now();
+let updated = false;
+
 switch(e.key) {
 case 'units':
-units = JSON.parse(e.newValue || '[]');
+const newUnits = JSON.parse(e.newValue || '[]');
+if (JSON.stringify(newUnits) !== JSON.stringify(units)) {
+units = newUnits;
 loadUnits();
+broadcastSync('units_updated', units, timestamp);
+updated = true;
+}
 break;
 case 'siteSettings':
-siteSettings = JSON.parse(e.newValue || '{}');
+const newSettings = JSON.parse(e.newValue || '{}');
+if (JSON.stringify(newSettings) !== JSON.stringify(siteSettings)) {
+siteSettings = newSettings;
 updateFooter();
+broadcastSync('settings_updated', siteSettings, timestamp);
+updated = true;
+}
 break;
 case 'messages':
-messages = JSON.parse(e.newValue || '[]');
+const newMessages = JSON.parse(e.newValue || '[]');
+if (newMessages.length > messages.length) {
+messages = newMessages;
+broadcastSync('message_added', messages, timestamp);
+updated = true;
+}
 break;
 }
+
+if (updated) {
+lastSyncTime = timestamp;
 }
-});
+}
+
+// بث رسالة تزامن
+function broadcastSync(type, data, timestamp = Date.now()) {
+const message = {
+type,
+data,
+timestamp,
+source: getDeviceId()
+};
+
+try {
+if (syncChannel) {
+syncChannel.postMessage(message);
+}
+
+// حفظ في localStorage كنسخة احتياطية
+localStorage.setItem('last_sync_message', JSON.stringify(message));
+localStorage.setItem('last_sync_time', timestamp.toString());
+} catch (e) {
+console.warn('فشل في بث رسالة التزامن:', e);
+}
+}
+
+// الحصول على معرف الجهاز
+function getDeviceId() {
+let deviceId = localStorage.getItem('device_id');
+if (!deviceId) {
+deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+localStorage.setItem('device_id', deviceId);
+}
+return deviceId;
+}
+
+// بث إشارة الحضور
+function broadcastPresence() {
+const presence = {
+deviceId: getDeviceId(),
+timestamp: Date.now(),
+userAgent: navigator.userAgent.substring(0, 50),
+isAdmin: currentUser !== null
+};
+
+broadcastSync('presence', presence);
+// تحديث إشارة الحضور كل 30 ثانية
+setTimeout(broadcastPresence, 30000);
+}
+
+// معالجة حالة الاتصال
+function handleOnlineStatus() {
+const wasOnline = isOnline;
+isOnline = navigator.onLine;
+
+if (!wasOnline && isOnline) {
+// عاد الاتصال - تحقق من التحديثات
+checkForUpdates();
+showSyncNotification('تم استعادة الاتصال - جاري التحقق من التحديثات');
+} else if (wasOnline && !isOnline) {
+showSyncNotification('انقطع الاتصال - العمل في وضع عدم الاتصال', 'warning');
+}
+}
+
+// بدء فترة التزامن
+function startSyncInterval() {
+// التحقق من التحديثات كل 10 ثوان
+syncInterval = setInterval(() => {
+if (isOnline) {
+checkForUpdates();
+}
+}, 10000);
+}
+
+// التحقق من التحديثات
+function checkForUpdates() {
+try {
+const lastSyncMessage = localStorage.getItem('last_sync_message');
+const lastSyncTimeStored = localStorage.getItem('last_sync_time');
+
+if (lastSyncMessage && lastSyncTimeStored) {
+const storedTime = parseInt(lastSyncTimeStored);
+if (storedTime > lastSyncTime) {
+const message = JSON.parse(lastSyncMessage);
+handleSyncMessage({ data: message });
+}
+}
+} catch (e) {
+console.warn('خطأ في التحقق من التحديثات:', e);
+}
+}
+
+// تحديث عدد المستخدمين النشطين
+let activeUsers = new Map();
+function updateActiveUsers(presence) {
+activeUsers.set(presence.deviceId, presence);
+// إزالة المستخدمين القدامى (أكثر من دقيقتين)
+const now = Date.now();
+for (const [deviceId, user] of activeUsers.entries()) {
+if (now - user.timestamp > 120000) {
+activeUsers.delete(deviceId);
+}
+}
+
+// تحديث عداد المستخدمين في الواجهة
+updateUserCounter();
+}
+
+// تحديث عداد المستخدمين
+function updateUserCounter() {
+const userCount = activeUsers.size;
+const adminCount = Array.from(activeUsers.values()).filter(user => user.isAdmin).length;
+// إضافة أو تحديث عداد المستخدمين في الهيدر
+let counter = document.getElementById('user-counter');
+if (!counter) {
+counter = document.createElement('div');
+counter.id = 'user-counter';
+counter.className = 'hidden md:flex items-center space-x-2 space-x-reverse bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-3 py-1 rounded-lg text-sm';
+
+const headerActions = document.querySelector('header .flex.items-center.space-x-4');
+headerActions.insertBefore(counter, headerActions.firstChild);
+}
+
+counter.innerHTML = `
+<span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+<span>${userCount} مستخدم نشط</span>
+${adminCount > 0 ? `<span class="text-xs">(${adminCount} إدارة)</span>` : ''}
+`;
+}
+
+// إشعارات التزامن
+function showSyncNotification(message, type = 'sync') {
+const notification = document.createElement('div');
+let bgColor = 'bg-blue-500';
+let icon = '🔄';
+
+if (type === 'warning') {
+bgColor = 'bg-yellow-500';
+icon = '⚠️';
+} else if (type === 'success') {
+bgColor = 'bg-green-500';
+icon = '✅';
+} else if (type === 'sync') {
+bgColor = 'bg-purple-500';
+icon = '🔄';
+}
+
+notification.className = `fixed bottom-4 right-4 ${bgColor} text-white px-4 py-2 rounded-lg shadow-lg text-sm flex items-center space-x-2 space-x-reverse z-50 animate-pulse`;
+notification.innerHTML = `
+<span>${icon}</span>
+<span>${message}</span>
+`;
+
+document.body.appendChild(notification);
+
+// إزالة الإشعار بعد 3 ثوان
+setTimeout(() => {
+notification.style.animation = 'fadeOut 0.5s ease-out forwards';
+setTimeout(() => notification.remove(), 500);
+}, 3000);
+}
+
+// وقف نظام التزامن
+function stopSyncSystem() {
+if (syncChannel) {
+syncChannel.close();
+}
+if (syncInterval) {
+clearInterval(syncInterval);
+}
+window.removeEventListener('storage', handleStorageChange);
+window.removeEventListener('online', handleOnlineStatus);
+window.removeEventListener('offline', handleOnlineStatus);
 }
 
 // وظيفة لتصدير البيانات كرابط للمشاركة
@@ -566,8 +820,8 @@ initDarkMode();
 updateFooter();
 loadUnits();
 
-// تفعيل مزامنة البيانات بين النوافذ
-syncDataAcrossTabs();
+// تفعيل نظام التزامن المتقدم
+initSyncSystem();
 // عرض رسالة ترحيب إذا تم تحميل البيانات من رابط
 if (dataLoaded) {
 setTimeout(() => {
@@ -1471,7 +1725,7 @@ content.innerHTML = `
 <option value="صلالة الغربية">صلالة الغربية</option>
 <option value="عوقد">عوقد</option>
 <option value="السعادة">السعادة</option>
-<option value="صحنوت">صحنوت</option>
+<option value="صحنوت">صحلنوت</option>
 <option value="ريسوت">ريسوت</option>
 </select>
 </div>
@@ -1592,7 +1846,7 @@ content.innerHTML = `
 <option value="صلالة الغربية" ${unit.location === 'صلالة الغربية' ? 'selected' : ''}>صلالة الغربية</option>
 <option value="عوقد" ${unit.location === 'عوقد' ? 'selected' : ''}>عوقد</option>
 <option value="السعادة" ${unit.location === 'السعادة' ? 'selected' : ''}>السعادة</option>
-<option value="صحنوت" ${unit.location === 'صحنوت' ? 'selected' : ''}>صحنوت</option>
+<option value="صحلنوت" ${unit.location === 'صحلنوت' ? 'selected' : ''}>صحلنوت</option>
 <option value="ريسوت" ${unit.location === 'ريسوت' ? 'selected' : ''}>ريسوت</option>
 </select>
 </div>
