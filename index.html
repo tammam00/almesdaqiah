@@ -557,7 +557,7 @@ source: 'GitHub Repository API'
 // 3️⃣ تحويل البيانات إلى JSON منسق
 const jsonContent = JSON.stringify(updatedData, null, 2);
 
-// 4️⃣ تحويل إلى Base64 (مطلوب لـ GitHub API)
+// 4️⃣ تحويل إلى Base64 (مطلوب لـ GitHub API) مع معالجة UTF-8
 const base64Content = btoa(unescape(encodeURIComponent(jsonContent)));
 
 // 5️⃣ إرسال التحديث إلى GitHub
@@ -1150,8 +1150,13 @@ return availability;
 function generateDateRange() {
 const dates = [];
 const currentYear = new Date().getFullYear();
-const startDate = new Date(currentYear, APP_CONFIG.CALENDAR_START.month, APP_CONFIG.CALENDAR_START.day);
-const endDate = new Date(currentYear, APP_CONFIG.CALENDAR_END.month, APP_CONFIG.CALENDAR_END.day);
+const today = new Date();
+// تحديد السنة الصحيحة (إذا كنا في يناير-مايو، استخدم السنة الحالية، وإلا العام القادم)
+const year = today.getMonth() < 5 ? currentYear : currentYear;
+
+const startDate = new Date(year, APP_CONFIG.CALENDAR_START.month, APP_CONFIG.CALENDAR_START.day);
+// إصلاح: نهاية سبتمبر بدلاً من بداية سبتمبر
+const endDate = new Date(year, APP_CONFIG.CALENDAR_END.month, 30); // 30 سبتمبر
 
 for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
 dates.push(date.toISOString().split('T')[0]);
